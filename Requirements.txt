@@ -1,0 +1,16 @@
+streamlit
+pandas
+numpy
+sqlalchemy
+psycopg2-binary
+chromadb
+sentence-transformers
+langchain
+langchain-community
+langchain-openai
+openai
+python-dotenv
+rank-bm25
+tiktoken
+unstructured
+pypdf
