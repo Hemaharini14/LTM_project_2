@@ -372,6 +372,7 @@ def get_institution_detail(unitid):
     ).fetchone()
 
     detail["ranking"] = dict(ranking) if ranking else None
+    detail["aid"] = aid_summary(institution)
     detail["estimates"] = estimate_missing_costs(conn, institution)
     detail["housing_context"] = housing_context(conn, institution)
 
@@ -406,6 +407,45 @@ def median(values):
         return ordered[middle]
 
     return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+# Federal grants and loans are limited to US citizens and eligible
+# non-citizens, so these figures describe domestic students. The UI must
+# say so rather than implying an international applicant would pay this.
+NET_PRICE_BANDS = [
+    ("net_price_0_30k", "Under $30,000"),
+    ("net_price_30_48k", "$30,001 - $48,000"),
+    ("net_price_48_75k", "$48,001 - $75,000"),
+    ("net_price_75_110k", "$75,001 - $110,000"),
+    ("net_price_110k_plus", "$110,000+")
+]
+
+
+def aid_summary(institution):
+    """Net price after aid, by family income, plus grant and debt context."""
+
+    bands = [
+        {"label": label, "net_price": institution[field]}
+        for field, label in NET_PRICE_BANDS
+        if institution[field] is not None
+    ]
+
+    sticker = institution["cost_of_attendance"]
+    cheapest = min((b["net_price"] for b in bands), default=None)
+
+    discount = None
+    if sticker and cheapest is not None and sticker > 0:
+        discount = round((sticker - cheapest) / sticker * 100)
+
+    return {
+        "average_net_price": institution["net_price_avg"],
+        "bands": bands,
+        "pell_grant_percent": institution["pell_grant_percent"],
+        "median_debt": institution["median_debt"],
+        "sticker_cost": sticker,
+        "max_discount_percent": discount,
+        "domestic_only": True
+    }
 
 
 def estimate_missing_costs(conn, institution):
@@ -771,6 +811,29 @@ INDIA_FEE_BANDS = {
 }
 
 
+# Fee concessions at the centrally funded institutes are set by policy,
+# not awarded per applicant, so they can be stated exactly.
+INDIA_WAIVERS = {
+    "IIT": [
+        {"who": "SC, ST and PwD students", "benefit": "Full tuition waiver"},
+        {"who": "Family income under Rs 1 lakh a year", "benefit": "Full tuition waiver"},
+        {"who": "Family income Rs 1-5 lakh a year", "benefit": "Two-thirds waiver (about Rs 66,666 a year payable)"},
+        {"who": "All students", "benefit": "MCM and institute merit-cum-means scholarships, applied for separately"}
+    ],
+    "NIT": [
+        {"who": "SC, ST and PwD students", "benefit": "Tuition waiver"},
+        {"who": "Economically weaker students", "benefit": "Institute fee concessions; terms vary by NIT"},
+        {"who": "All students", "benefit": "Central Sector and state merit scholarships"}
+    ]
+}
+
+
+def india_scholarships(institute_type):
+    """Published concessions for this class of institute, or none."""
+
+    return INDIA_WAIVERS.get(institute_type, [])
+
+
 def search_india(term, limit=20):
     """Name search across institutes in the JoSAA cutoff data."""
 
@@ -862,6 +925,7 @@ def get_india_detail(institute):
         "fee_band_usd_min": to_usd(band.get("annual_inr_min")),
         "fee_band_usd_max": to_usd(band.get("annual_inr_max")),
         "fee_note": band.get("note"),
+        "scholarships": india_scholarships(header["institute_type"]),
         "exam": (
             "JEE Advanced"
             if header["institute_type"] == "IIT"

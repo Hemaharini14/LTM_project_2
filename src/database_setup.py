@@ -1041,6 +1041,79 @@ def create_database():
     )
 
     # ========================================================
+    # FINANCIAL AID / SCHOLARSHIPS
+    # ========================================================
+
+    # Net price is what students actually pay after grants and
+    # scholarships, reported per family income band. Each institution
+    # files under one sector, so the four variants collapse into one.
+
+    aid_bands = {
+        "net_price_0_30k": "NPT41",
+        "net_price_30_48k": "NPT42",
+        "net_price_48_75k": "NPT43",
+        "net_price_75_110k": "NPT44",
+        "net_price_110k_plus": "NPT45",
+        "net_price_avg": "NPT4"
+    }
+
+    aid_columns = ["UNITID", "PCTPELL", "GRAD_DEBT_MDN"]
+
+    for prefix in aid_bands.values():
+        aid_columns += [
+            f"{prefix}_{sector}"
+            for sector in ("PUB", "PRIV", "PROG", "OTHER")
+        ]
+
+    aid_df = pd.read_csv(
+        DATA_DIR / "Most-Recent-Cohorts-Institution.csv",
+        usecols=lambda column: column in aid_columns,
+        low_memory=False
+    )
+
+    aid = pd.DataFrame({"unitid": aid_df["UNITID"]})
+
+    for field, prefix in aid_bands.items():
+        merged = None
+
+        for sector in ("PUB", "PRIV", "PROG", "OTHER"):
+            name = f"{prefix}_{sector}"
+
+            if name not in aid_df.columns:
+                continue
+
+            values = pd.to_numeric(aid_df[name], errors="coerce")
+            merged = values if merged is None else merged.fillna(values)
+
+        aid[field] = merged
+
+    aid["pell_grant_percent"] = pd.to_numeric(
+        aid_df["PCTPELL"], errors="coerce"
+    )
+    aid["median_debt"] = pd.to_numeric(
+        aid_df["GRAD_DEBT_MDN"], errors="coerce"
+    )
+
+    aid_fields = list(aid_bands.keys()) + ["pell_grant_percent", "median_debt"]
+
+    for field in aid_fields:
+        conn.execute(f"ALTER TABLE us_institutions ADD COLUMN {field} REAL")
+
+    aid = aid.where(pd.notnull(aid), None)
+
+    conn.executemany(
+        f"""
+        UPDATE us_institutions
+        SET {", ".join(field + " = ?" for field in aid_fields)}
+        WHERE unitid = ?
+        """,
+        [
+            tuple(row[field] for field in aid_fields) + (int(row["unitid"]),)
+            for _, row in aid.iterrows()
+        ]
+    )
+
+    # ========================================================
     # GEOCODE UNIVERSITIES
     # ========================================================
 

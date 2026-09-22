@@ -56,6 +56,53 @@ function statCost(label, key, uni, formatter) {
   </div>`;
 }
 
+/**
+ * Net price after grants and scholarships, by family income.
+ * A negative net price is real — aid can exceed the full cost — but
+ * reads as an error, so it is shown as "covered in full".
+ */
+function aidHtml(aid) {
+  if (!aid || !aid.bands || !aid.bands.length) {
+    return `<p class="hint">This university does not report net-price data.</p>`;
+  }
+
+  const price = (value) => value <= 0
+    ? `<strong>Covered in full</strong>`
+    : escapeHtml(money(value));
+
+  const rows = aid.bands.map((band) => `
+    <tr>
+      <td>${escapeHtml(band.label)}</td>
+      <td><strong>${price(band.net_price)}</strong></td>
+    </tr>`).join("");
+
+  const pell = aid.pell_grant_percent != null
+    ? Math.round(aid.pell_grant_percent * 100) + "%" : null;
+
+  return `
+    <div class="stat-grid">
+      ${statOf("Average price after aid", aid.average_net_price, money)}
+      ${statOf("Students on need-based grants", pell, (v) => v)}
+      ${statOf("Median debt at graduation", aid.median_debt, money)}
+    </div>
+
+    ${aid.max_discount_percent ? `<p class="hint">At the lowest income band, aid covers up to
+      <strong>${aid.max_discount_percent}%</strong> of the
+      ${escapeHtml(money(aid.sticker_cost))} full cost of attendance.</p>` : ""}
+
+    <div class="table-scroll" style="margin-top:14px;">
+      <table>
+        <tr><th>Family income</th><th>Actually paid per year</th></tr>
+        ${rows}
+      </table>
+    </div>
+
+    <p class="hint" style="margin-top:12px;"><strong>Important for international applicants:</strong>
+      these figures come from US federal aid data and describe US citizens and eligible
+      non-citizens. Pell Grants and federal loans are not open to international students —
+      ask this university about its own institutional scholarships, which are.</p>`;
+}
+
 /** Shows how this campus's off-campus costs sit against state and national medians. */
 function housingContextHtml(hc) {
   if (!hc || hc.annual === null || hc.annual === undefined) return "";
@@ -114,6 +161,22 @@ async function renderIndia(name, status) {
     <p class="hint">${escapeHtml(uni.fee_note || "")}</p>
     <p class="hint">Converted at Rs 83 to the dollar. Always confirm the current figure on the institute's own fee page.</p>
 
+    <h2>Scholarships &amp; fee waivers</h2>
+    ${uni.scholarships && uni.scholarships.length ? `
+      <div class="table-scroll">
+        <table>
+          <tr><th>Who qualifies</th><th>What you get</th></tr>
+          ${uni.scholarships.map((s) => `
+            <tr><td>${escapeHtml(s.who)}</td><td><strong>${escapeHtml(s.benefit)}</strong></td></tr>`).join("")}
+        </table>
+      </div>
+      <p class="hint" style="margin-top:12px;">These are national policy concessions applied at
+        admission, not competitive awards. Confirm the current slabs on the institute's own fee page,
+        and check the National Scholarship Portal for additional central and state schemes.</p>
+      <div class="badge-row" style="margin-top:10px;">
+        <a class="btn btn-ghost" href="https://scholarships.gov.in/" target="_blank" rel="noopener noreferrer">National Scholarship Portal ↗</a>
+      </div>` : `<p class="hint">No published fee-concession policy on record for this institute type.</p>`}
+
     <h2>Entry requirements</h2>
     <p class="hint">India admits on entrance-exam rank, not an acceptance rate. This institute
       admits through <strong>${escapeHtml(uni.exam)}</strong> — the table below shows the closing
@@ -151,6 +214,25 @@ async function renderIndia(name, status) {
 
     <p class="hint" style="margin-top:22px;">Cutoffs come from JoSAA's published ${uni.cutoff_year}
       seat-allocation data. Fees follow published national policy, not a per-institute price list.</p>`;
+}
+
+/** Government-run scholarship programmes for international students. */
+const NATIONAL_SCHEMES = {
+  "United Kingdom": ["Chevening Scholarships", "https://www.chevening.org/"],
+  "Australia": ["Australia Awards", "https://www.dfat.gov.au/people-to-people/australia-awards"],
+  "France": ["Campus France scholarships", "https://www.campusfrance.org/en/financer-etudes-france"],
+  "Germany": ["DAAD Scholarships", "https://www.daad.de/en/studying-in-germany/scholarships/"],
+  "Singapore": ["Singapore Government scholarships", "https://www.moe.gov.sg/financial-matters/awards-scholarships"],
+  "Canada": ["EduCanada scholarships", "https://www.educanada.ca/scholarships-bourses/"],
+  "Netherlands": ["Study in NL grants", "https://www.studyinnl.org/finances/nl-scholarship"]
+};
+
+function nationalScheme(country) {
+  const scheme = NATIONAL_SCHEMES[country];
+  if (!scheme) return "";
+
+  return `<a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+     href="${escapeHtml(scheme[1])}">${escapeHtml(scheme[0])} ↗</a>`;
 }
 
 /** Detail view for a non-US university, which has a different data shape:
@@ -216,6 +298,17 @@ async function renderInternational(name, status) {
       "Admission requirements for this country are published by each university — check its official admissions page.")}</p>
     <p class="hint"><strong>Note:</strong> acceptance rates are a US statistic.
       Universities here publish entry requirements instead, so we don't show a percentage.</p>
+
+    <h2>Scholarships</h2>
+    <p class="hint">We don't hold scholarship data for ${escapeHtml(uni.country)}, so rather than
+      guess, here are the places that do — the university's own scheme and the national
+      programme for international students.</p>
+    <div class="badge-row" style="margin-top:12px;">
+      <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://www.google.com/search?q=${encodeURIComponent(uni.university_name + " international student scholarships")}">
+        ${escapeHtml(uni.university_name)} scholarships ↗</a>
+      ${nationalScheme(uni.country)}
+    </div>
 
     <h2>Programmes &amp; tuition</h2>
     <div class="table-scroll">
@@ -322,6 +415,9 @@ async function renderInternational(name, status) {
          href="https://${escapeHtml(uni.institution_url.replace(/^https?:\/\//, ""))}">University housing page ↗</a>` : ""}
     </div>
     <p class="hint">We send you to live listings rather than showing a fixed list, so prices and availability are current.</p>
+
+    <h2>Scholarships &amp; financial aid</h2>
+    ${aidHtml(uni.aid)}
 
     <h2>Eligibility &amp; admission</h2>
     <div class="stat-grid">
