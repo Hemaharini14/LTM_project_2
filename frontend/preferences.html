@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preferences — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Tell us about you</h1>
+  <p class="page-sub">No résumé needed — fill this in and we'll match universities to your profile.</p>
+
+  <form id="pref-form" class="card form-grid">
+    <div class="field">
+      <label for="pref-name">Your name</label>
+      <input type="text" id="pref-name">
+    </div>
+    <div class="field">
+      <label for="pref-degree">Undergraduate degree</label>
+      <input type="text" id="pref-degree" placeholder="e.g. B.E. Computer Science">
+    </div>
+    <div class="field">
+      <label for="pref-year">Year you passed out</label>
+      <input type="number" id="pref-year" min="1950" max="2100" placeholder="e.g. 2025">
+    </div>
+    <div class="field">
+      <label for="pref-country">Preferred country</label>
+      <select id="pref-country"></select>
+    </div>
+    <div class="field">
+      <label for="pref-field">Field / domain of interest</label>
+      <input type="text" id="pref-field" list="field-options" placeholder="e.g. Artificial Intelligence">
+      <datalist id="field-options"></datalist>
+      <p class="hint">Your own wording works — we match it semantically.</p>
+    </div>
+    <div class="field">
+      <label for="pref-skills">Skill set</label>
+      <input type="text" id="pref-skills" placeholder="e.g. Python, machine learning">
+    </div>
+    <div class="field">
+      <label for="pref-certs">Certifications</label>
+      <input type="text" id="pref-certs" placeholder="comma separated">
+    </div>
+    <div class="field">
+      <label for="pref-fee-min">Min annual fees (USD)</label>
+      <input type="number" id="pref-fee-min" min="0" step="1000">
+    </div>
+    <div class="field">
+      <label for="pref-fee-max">Max annual fees (USD)</label>
+      <input type="number" id="pref-fee-max" min="0" step="1000">
+    </div>
+    <div class="field field-wide">
+      <label for="pref-weight">Academic importance vs. affordability: <span id="weight-value">70</span>%</label>
+      <input type="range" id="pref-weight" min="0" max="100" step="5" value="70">
+      <p class="hint">Applies outside the United States, where we rank by score and cost of living.</p>
+    </div>
+    <button class="btn btn-primary field-wide" type="submit">Find my universities</button>
+  </form>
+
+  <section id="results-section" class="panel" hidden>
+    <h2>Recommended universities</h2>
+    <p class="hint" id="results-note"></p>
+    <div class="results-grid" id="results-grid"></div>
+  </section>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script src="js/results.js"></script>
+<script>
+(async () => {
+  if (!await initPage("preferences.html")) return;
+  await loadFilterOptions("pref-country", "field-options");
+
+  const weight = document.getElementById("pref-weight");
+  weight.addEventListener("input", () => {
+    document.getElementById("weight-value").textContent = weight.value;
+  });
+
+  document.getElementById("pref-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const payload = {
+      country: document.getElementById("pref-country").value || null,
+      field_of_study: document.getElementById("pref-field").value || null,
+      fee_min: document.getElementById("pref-fee-min").value ? Number(document.getElementById("pref-fee-min").value) : null,
+      fee_max: document.getElementById("pref-fee-max").value ? Number(document.getElementById("pref-fee-max").value) : null,
+      academic_weight: Number(weight.value)
+    };
+
+    const button = event.target.querySelector("button[type=submit]");
+    setBusy(button, true, "Searching…");
+
+    try {
+      const data = await api("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      renderRecommendations(data, payload, { gridId: "results-grid", noteId: "results-note" });
+      const section = document.getElementById("results-section");
+      section.hidden = false;
+      section.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

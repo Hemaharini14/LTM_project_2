@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entrance exams — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Prepare for your entrance exams</h1>
+  <p class="page-sub">Pick an exam, then a topic — each opens curated lessons on YouTube.</p>
+
+  <div id="exam-list"></div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+const EXAMS = [
+  { name: "IELTS", blurb: "English proficiency for the UK, Australia, Canada and many US universities.",
+    topics: ["IELTS listening full lesson", "IELTS reading strategies", "IELTS writing task 2", "IELTS speaking practice"] },
+  { name: "TOEFL", blurb: "English proficiency accepted by most US universities.",
+    topics: ["TOEFL reading section", "TOEFL listening practice", "TOEFL speaking templates", "TOEFL writing integrated task"] },
+  { name: "PTE Academic", blurb: "Computer-based English test with fast results.",
+    topics: ["PTE speaking repeat sentence", "PTE writing summarize text", "PTE reading fill in the blanks", "PTE listening practice"] },
+  { name: "GRE", blurb: "Required by many US graduate programmes.",
+    topics: ["GRE quantitative reasoning", "GRE verbal reasoning vocabulary", "GRE analytical writing", "GRE full practice test walkthrough"] },
+  { name: "GMAT", blurb: "Standard test for MBA and business master's programmes.",
+    topics: ["GMAT quantitative problem solving", "GMAT data sufficiency", "GMAT verbal critical reasoning", "GMAT integrated reasoning"] },
+  { name: "SAT", blurb: "Undergraduate admissions test used across the US.",
+    topics: ["Digital SAT math", "SAT reading and writing", "SAT full practice test", "SAT tips and strategies"] },
+  { name: "ACT", blurb: "Alternative US undergraduate admissions test.",
+    topics: ["ACT math review", "ACT science section strategy", "ACT English grammar rules", "ACT reading speed tips"] },
+  { name: "Aptitude", blurb: "Quantitative, logical and verbal aptitude for placements and entrance tests.",
+    topics: ["Quantitative aptitude shortcuts", "Logical reasoning puzzles", "Verbal ability preparation", "Data interpretation practice"] }
+];
+
+// Search URLs rather than hard-coded video IDs: individual videos get taken
+// down or renamed, a search for the topic always resolves to current lessons.
+function youtubeSearch(query) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+(async () => {
+  if (!await initPage("exams.html")) return;
+
+  document.getElementById("exam-list").innerHTML = EXAMS.map((exam) => `
+    <section style="margin-bottom:28px;">
+      <h2>${escapeHtml(exam.name)}</h2>
+      <p class="hint">${escapeHtml(exam.blurb)}</p>
+      <div class="results-grid">
+        ${exam.topics.map((topic) => `
+          <a class="result-card" href="${youtubeSearch(topic)}" target="_blank" rel="noopener noreferrer">
+            <h3>▶ ${escapeHtml(topic)}</h3>
+            <p class="result-meta">Opens lessons on YouTube</p>
+          </a>`).join("")}
+      </div>
+    </section>`).join("");
+})();
+</script>
+</body>
+</html>

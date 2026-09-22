@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>History — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Your history</h1>
+  <p class="page-sub">Searches, questions and universities you've looked at.</p>
+
+  <p class="hint" id="status">Loading…</p>
+  <div class="table-scroll"><table id="history-table" hidden></table></div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+const KIND_LABEL = { search: "Search", chat: "Question", view: "Viewed university" };
+
+(async () => {
+  if (!await initPage("history.html")) return;
+
+  const status = document.getElementById("status");
+  const table = document.getElementById("history-table");
+
+  try {
+    const data = await api("/api/history");
+
+    if (!data.history.length) {
+      status.textContent = "Nothing here yet — search for universities or ask a question first.";
+      return;
+    }
+
+    status.hidden = true;
+    table.hidden = false;
+    table.innerHTML = `
+      <tr><th>Type</th><th>Detail</th><th>Context</th><th>When</th></tr>
+      ${data.history.map((row) => `
+        <tr>
+          <td>${escapeHtml(KIND_LABEL[row.kind] || row.kind)}</td>
+          <td>${escapeHtml(row.query_text || "")}</td>
+          <td>${escapeHtml(row.detail || "")}</td>
+          <td>${escapeHtml((row.created_at || "").replace("T", " "))}</td>
+        </tr>`).join("")}`;
+  } catch (error) {
+    status.textContent = `Could not load history: ${error.message}`;
+  }
+})();
+</script>
+</body>
+</html>

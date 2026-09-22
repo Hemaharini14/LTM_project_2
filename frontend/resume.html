@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Résumé — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Upload your résumé</h1>
+  <p class="page-sub">We skim it for your field, background and budget, then match universities.</p>
+
+  <div class="card">
+    <div class="field">
+      <label class="field-label" for="resume-file">Résumé (PDF)</label>
+      <input type="file" id="resume-file" accept="application/pdf">
+    </div>
+    <button class="btn btn-primary" id="resume-submit">Skim my résumé</button>
+    <p class="error-text" id="resume-error" hidden></p>
+  </div>
+
+  <section id="confirm-section" class="panel" hidden>
+    <h2>What we found</h2>
+    <p class="hint">Edit anything we got wrong, then get your matches.</p>
+
+    <form id="confirm-form" class="card form-grid">
+      <div class="field">
+        <label for="pref-name">Name</label>
+        <input type="text" id="pref-name">
+      </div>
+      <div class="field">
+        <label for="pref-degree">Undergraduate degree</label>
+        <input type="text" id="pref-degree">
+      </div>
+      <div class="field">
+        <label for="pref-year">Graduation year</label>
+        <input type="number" id="pref-year" min="1950" max="2100">
+      </div>
+      <div class="field">
+        <label for="pref-country">Country</label>
+        <select id="pref-country"></select>
+      </div>
+      <div class="field">
+        <label for="pref-field">Field of study</label>
+        <input type="text" id="pref-field" list="field-options">
+        <datalist id="field-options"></datalist>
+      </div>
+      <div class="field">
+        <label for="pref-skills">Skills</label>
+        <input type="text" id="pref-skills" placeholder="comma separated">
+      </div>
+      <div class="field">
+        <label for="pref-fee-min">Min annual tuition (USD)</label>
+        <input type="number" id="pref-fee-min" min="0" step="1000">
+      </div>
+      <div class="field">
+        <label for="pref-fee-max">Max annual tuition (USD)</label>
+        <input type="number" id="pref-fee-max" min="0" step="1000">
+      </div>
+      <button class="btn btn-primary field-wide" type="submit">Show my matches</button>
+    </form>
+  </section>
+
+  <section id="results-section" class="panel" hidden>
+    <h2>Recommended universities</h2>
+    <p class="hint" id="results-note"></p>
+    <div class="results-grid" id="results-grid"></div>
+  </section>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script src="js/results.js"></script>
+<script>
+(async () => {
+  if (!await initPage("resume.html")) return;
+  await loadFilterOptions("pref-country", "field-options");
+
+  const errorEl = document.getElementById("resume-error");
+
+  document.getElementById("resume-submit").addEventListener("click", async (event) => {
+    const file = document.getElementById("resume-file").files[0];
+    errorEl.hidden = true;
+
+    if (!file) {
+      errorEl.textContent = "Choose a PDF résumé first.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setBusy(event.target, true, "Reading your résumé…");
+
+    try {
+      const prefs = await api("/api/resume/upload", { method: "POST", body: formData });
+
+      document.getElementById("pref-name").value = prefs.full_name || "";
+      document.getElementById("pref-degree").value = prefs.undergraduate_degree || "";
+      document.getElementById("pref-year").value = prefs.graduation_year ?? "";
+      document.getElementById("pref-country").value = prefs.country || "";
+      document.getElementById("pref-field").value = prefs.field_of_study || "";
+      document.getElementById("pref-skills").value = (prefs.skills || []).join(", ");
+      document.getElementById("pref-fee-min").value = prefs.fee_min ?? "";
+      document.getElementById("pref-fee-max").value = prefs.fee_max ?? "";
+
+      const section = document.getElementById("confirm-section");
+      section.hidden = false;
+      section.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      errorEl.textContent = error.message;
+      errorEl.hidden = false;
+    } finally {
+      setBusy(event.target, false);
+    }
+  });
+
+  document.getElementById("confirm-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const payload = {
+      country: document.getElementById("pref-country").value || null,
+      field_of_study: document.getElementById("pref-field").value || null,
+      fee_min: document.getElementById("pref-fee-min").value ? Number(document.getElementById("pref-fee-min").value) : null,
+      fee_max: document.getElementById("pref-fee-max").value ? Number(document.getElementById("pref-fee-max").value) : null
+    };
+
+    const button = event.target.querySelector("button[type=submit]");
+    setBusy(button, true, "Finding matches…");
+
+    try {
+      const data = await api("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      renderRecommendations(data, payload, { gridId: "results-grid", noteId: "results-note" });
+      const section = document.getElementById("results-section");
+      section.hidden = false;
+      section.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

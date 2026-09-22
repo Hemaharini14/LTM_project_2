@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title" id="greeting">Welcome</h1>
+  <p class="page-sub">Start with your résumé, set preferences yourself, or just ask.</p>
+
+  <div class="results-grid" style="margin-bottom:34px;">
+    <a class="result-card" href="resume.html">
+      <h3>📄 Upload your résumé</h3>
+      <p class="result-meta">We read it and match you to universities automatically.</p>
+    </a>
+    <a class="result-card" href="preferences.html">
+      <h3>🎯 Set your preferences</h3>
+      <p class="result-meta">Country, field, budget, skills and certifications.</p>
+    </a>
+    <a class="result-card" href="chat.html">
+      <h3>💬 Ask EduBridge</h3>
+      <p class="result-meta">Natural-language answers grounded in real university data.</p>
+    </a>
+    <a class="result-card" href="exams.html">
+      <h3>📚 Prepare for exams</h3>
+      <p class="result-meta">IELTS, TOEFL, GRE, GMAT, SAT, ACT and more.</p>
+    </a>
+  </div>
+
+  <h2>Education news</h2>
+  <p class="hint" id="news-status">Loading headlines…</p>
+  <div class="results-grid" id="news-grid"></div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+(async () => {
+  const user = await initPage("dashboard.html");
+  if (!user) return;
+
+  document.getElementById("greeting").textContent =
+    `Welcome, ${user.full_name || user.email.split("@")[0]}`;
+
+  const status = document.getElementById("news-status");
+  const grid = document.getElementById("news-grid");
+
+  try {
+    const data = await api("/api/news");
+
+    if (!data.articles.length) {
+      status.textContent = "No headlines available right now — the news feeds could not be reached.";
+      return;
+    }
+
+    status.hidden = true;
+    grid.innerHTML = data.articles.map((article) => `
+      <a class="result-card" href="${escapeHtml(article.link)}" target="_blank" rel="noopener noreferrer">
+        <h3>${escapeHtml(article.title)}</h3>
+        <p class="result-meta">${escapeHtml(article.summary)}</p>
+        <div class="badge-row"><span class="badge badge-light">${escapeHtml(article.source)}</span></div>
+      </a>`).join("");
+  } catch (error) {
+    status.textContent = `Could not load news: ${error.message}`;
+  }
+})();
+</script>
+</body>
+</html>

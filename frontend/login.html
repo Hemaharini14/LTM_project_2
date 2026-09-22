@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 6 L46 16 L24 26 L2 16 Z"/>
+        <path d="M12 20.5 V32 C12 35 17 38 24 38 C31 38 36 35 36 32 V20.5"/>
+      </svg>
+      <span class="brand-name">EduBridge</span>
+    </a>
+  </div>
+</header>
+
+<main class="wrap-narrow panel">
+  <h1 class="page-title">Welcome</h1>
+  <p class="page-sub">Sign in to get university recommendations built around you.</p>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="tab-btn is-active" data-tab="login">Sign in</button>
+      <button class="tab-btn" data-tab="signup">Create account</button>
+    </div>
+
+    <div class="tab-panel is-active" data-panel="login">
+      <form id="login-form">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required autocomplete="current-password">
+        </div>
+        <p class="error-text" id="login-error" hidden></p>
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      </form>
+    </div>
+
+    <div class="tab-panel" data-panel="signup">
+      <form id="signup-form">
+        <div class="field">
+          <label for="signup-name">Full name</label>
+          <input type="text" id="signup-name" autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" required minlength="8" autocomplete="new-password">
+          <p class="hint">At least 8 characters.</p>
+        </div>
+        <p class="error-text" id="signup-error" hidden></p>
+        <button class="btn btn-primary btn-block" type="submit">Create account</button>
+      </form>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("is-active"));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("is-active"));
+    btn.classList.add("is-active");
+    document.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`).classList.add("is-active");
+  });
+});
+
+function showError(id, message) {
+  const el = document.getElementById(id);
+  el.textContent = message;
+  el.hidden = false;
+}
+
+document.getElementById("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  document.getElementById("login-error").hidden = true;
+  const button = event.target.querySelector("button");
+  setBusy(button, true, "Signing in…");
+
+  try {
+    await api("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: document.getElementById("login-email").value,
+        password: document.getElementById("login-password").value
+      })
+    });
+    window.location.href = "dashboard.html";
+  } catch (error) {
+    showError("login-error", error.message);
+    setBusy(button, false);
+  }
+});
+
+document.getElementById("signup-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  document.getElementById("signup-error").hidden = true;
+  const button = event.target.querySelector("button");
+  setBusy(button, true, "Creating…");
+
+  try {
+    await api("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name: document.getElementById("signup-name").value,
+        email: document.getElementById("signup-email").value,
+        password: document.getElementById("signup-password").value
+      })
+    });
+    window.location.href = "dashboard.html";
+  } catch (error) {
+    showError("signup-error", error.message);
+    setBusy(button, false);
+  }
+});
+</script>
+</body>
+</html>

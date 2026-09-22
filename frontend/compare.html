@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compare — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Compare universities</h1>
+  <p class="page-sub">Search any two universities — including across countries, like IIT Bombay against Oxford.</p>
+
+  <div class="card form-grid">
+    <div class="field">
+      <label for="search-a">First university</label>
+      <input type="text" id="search-a" list="uni-list-a" placeholder="Start typing a name" autocomplete="off">
+      <datalist id="uni-list-a"></datalist>
+    </div>
+    <div class="field">
+      <label for="search-b">Second university</label>
+      <input type="text" id="search-b" list="uni-list-b" placeholder="Start typing a name" autocomplete="off">
+      <datalist id="uni-list-b"></datalist>
+    </div>
+    <button class="btn btn-primary field-wide" id="compare-btn">Compare</button>
+    <p class="error-text field-wide" id="compare-error" hidden></p>
+  </div>
+
+  <section id="compare-result" class="panel" hidden>
+    <div class="table-scroll"><table id="compare-table"></table></div>
+    <p class="hint" id="compare-caveat"></p>
+  </section>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+const labelToKey = new Map();
+
+(async () => {
+  if (!await initPage("compare.html")) return;
+
+  const errorEl = document.getElementById("compare-error");
+
+  async function searchInto(term, listId) {
+    if (!term || term.trim().length < 2) return;
+
+    const data = await api(`/api/search/all?q=${encodeURIComponent(term)}`);
+
+    data.results.forEach((r) => labelToKey.set(r.label.toLowerCase(), r.key));
+
+    document.getElementById(listId).innerHTML = data.results
+      .map((r) => `<option value="${escapeHtml(r.label)}"></option>`).join("");
+  }
+
+  function debounce(fn, delay) {
+    let timer;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
+  }
+
+  document.getElementById("search-a").addEventListener("input",
+    debounce((e) => searchInto(e.target.value, "uni-list-a"), 250));
+  document.getElementById("search-b").addEventListener("input",
+    debounce((e) => searchInto(e.target.value, "uni-list-b"), 250));
+
+  // Deep-linked from a university page: ?a=<typed key>
+  const presetKey = new URLSearchParams(location.search).get("a");
+  if (presetKey) {
+    try {
+      const data = await api(`/api/compare?a=${encodeURIComponent(presetKey)}&b=${encodeURIComponent(presetKey)}`);
+      const label = data.a.name;
+      labelToKey.set(label.toLowerCase(), presetKey);
+      document.getElementById("search-a").value = label;
+    } catch { /* ignore an unusable preset */ }
+  }
+
+  /**
+   * Datalist entries carry a suffix ("… (IIT, India)"), but people type
+   * just the name, so fall back to prefix then substring matching rather
+   * than demanding the exact label back.
+   */
+  function resolve(inputId) {
+    const typed = document.getElementById(inputId).value.trim().toLowerCase();
+    if (!typed) return null;
+
+    if (labelToKey.has(typed)) return labelToKey.get(typed);
+
+    for (const [label, key] of labelToKey) {
+      if (label.startsWith(typed)) return key;
+    }
+
+    for (const [label, key] of labelToKey) {
+      if (label.includes(typed)) return key;
+    }
+
+    return null;
+  }
+
+  /** Make sure suggestions exist for whatever is currently typed. */
+  async function ensureResolved(inputId, listId) {
+    if (resolve(inputId)) return;
+    await searchInto(document.getElementById(inputId).value, listId);
+  }
+
+  document.getElementById("compare-btn").addEventListener("click", async (event) => {
+    errorEl.hidden = true;
+    setBusy(event.target, true, "Comparing…");
+
+    await ensureResolved("search-a", "uni-list-a");
+    await ensureResolved("search-b", "uni-list-b");
+
+    const a = resolve("search-a");
+    const b = resolve("search-b");
+
+    if (!a || !b) {
+      setBusy(event.target, false);
+      errorEl.textContent = "Pick both universities from the suggestions list.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    try {
+      const data = await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+      renderComparison(data.a, data.b);
+      document.getElementById("compare-result").hidden = false;
+    } catch (error) {
+      errorEl.textContent = error.message;
+      errorEl.hidden = false;
+    } finally {
+      setBusy(event.target, false);
+    }
+  });
+
+  function cell(value, estimated) {
+    if (value === null || value === undefined) return `<span class="hint">Not available</span>`;
+    return estimated
+      ? `${escapeHtml(String(value))}<span class="est-tag">est.</span>`
+      : escapeHtml(String(value));
+  }
+
+  function row(label, left, right, emphasis) {
+    const cls = emphasis ? ' class="total-row"' : "";
+    return `<tr${cls}><th>${escapeHtml(label)}</th><td>${left}</td><td>${right}</td></tr>`;
+  }
+
+  function renderComparison(a, b) {
+    const m = (u, field, estField) => cell(u[field] == null ? null : money(u[field]), estField && u[estField]);
+
+    document.getElementById("compare-table").innerHTML = `
+      <tr>
+        <th></th>
+        <th><a href="${escapeHtml(a.link)}">${escapeHtml(a.name)}</a></th>
+        <th><a href="${escapeHtml(b.link)}">${escapeHtml(b.name)}</a></th>
+      </tr>
+      ${row("Location", escapeHtml(a.location), escapeHtml(b.location))}
+      ${row("Type", escapeHtml(a.kind || "—"), escapeHtml(b.kind || "—"))}
+      ${row("World rank", cell(a.rank && `#${a.rank}`), cell(b.rank && `#${b.rank}`))}
+      ${row("Tuition / year", m(a, "tuition_usd", "tuition_estimated"), m(b, "tuition_usd", "tuition_estimated"))}
+      ${row("Accommodation / year", m(a, "housing_usd", "housing_estimated"), m(b, "housing_usd", "housing_estimated"))}
+      ${row("Other costs / year", m(a, "other_costs_usd"), m(b, "other_costs_usd"))}
+      ${row("Annual total",
+            a.annual_total_usd != null ? escapeHtml(money(a.annual_total_usd)) : "—",
+            b.annual_total_usd != null ? escapeHtml(money(b.annual_total_usd)) : "—",
+            true)}
+      ${row("Entry requirement", cell(a.entry || a.entry_basis), cell(b.entry || b.entry_basis))}
+      ${row("Median earnings (10 yr)", m(a, "outcome_usd"), m(b, "outcome_usd"))}`;
+
+    // An annual total built from fewer components isn't comparable to a
+    // fuller one, so say which pieces are missing rather than implying
+    // one university is simply cheaper.
+    const missing = [];
+    [a, b].forEach((u) => {
+      const gaps = [];
+      if (u.tuition_usd == null) gaps.push("tuition");
+      if (u.housing_usd == null) gaps.push("accommodation");
+      if (gaps.length) missing.push(`${u.name} has no ${gaps.join(" or ")} figure`);
+    });
+
+    document.getElementById("compare-caveat").textContent = missing.length
+      ? `Totals only add up what we hold: ${missing.join("; ")}. Compare the rows above rather than the totals alone.`
+      : "Totals are tuition plus accommodation plus other listed costs, in USD per year.";
+  }
+})();
+</script>
+</body>
+</html>

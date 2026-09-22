@@ -19,6 +19,13 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
+# Vector store (rebuild with: python -m src.vector_store)
+chroma_db/
+
+# Large source datasets (download from https://collegescorecard.ed.gov/data/)
+dataset/Most-Recent-Cohorts-Institution.csv
+dataset/Most-Recent-Cohorts-Field-of-Study.csv
+
 # Streamlit
 .streamlit/secrets.toml
 

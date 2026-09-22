@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, #2a4374 0%, #14264d 60%, #0d1a36 100%);
+  overflow: hidden;
+}
+
+.stage { perspective: 2000px; text-align: center; }
+
+.book {
+  position: relative;
+  width: min(86vw, 640px);
+  height: min(60vh, 400px);
+  transform-style: preserve-3d;
+}
+
+/* ---- inner spread, revealed once the cover swings open ---- */
+
+.page {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(180deg, #fffdf6, #efe9d9);
+  border: 1px solid #d9d0b8;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.page-left { left: 0; border-radius: 8px 2px 2px 8px; }
+.page-right { right: 0; border-radius: 2px 8px 8px 2px; }
+
+.spine {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: linear-gradient(180deg, #b9ad8e, #7d7359, #b9ad8e);
+}
+
+.title-block {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  /* Clear of the spine seam, which would otherwise slice the wordmark. */
+  transform: translateZ(40px);
+  animation: reveal-title 1s ease 2.5s forwards;
+}
+
+@keyframes reveal-title {
+  from { opacity: 0; transform: translateZ(40px) translateY(14px); }
+  to   { opacity: 1; transform: translateZ(40px) translateY(0); }
+}
+
+.landing-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2.4rem, 8vw, 4.2rem);
+  color: var(--navy-900);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.landing-tagline {
+  color: #6b6350;
+  font-size: clamp(0.72rem, 2.2vw, 0.95rem);
+  margin-top: 8px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- front cover: reads "Higher Education", then swings open ---- */
+
+.cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.028) 0 2px, transparent 2px 5px),
+    linear-gradient(145deg, #2c4573 0%, #1b2f56 48%, #12233f 100%);
+  border-radius: 8px;
+  border: 1px solid #0d1a33;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  transform-origin: left center;
+  backface-visibility: hidden;
+  transform: translateZ(2px);
+  animation: open-cover 1.7s cubic-bezier(0.38, 0.02, 0.2, 1) 1.5s forwards;
+}
+
+@keyframes open-cover {
+  from { transform: translateZ(2px) rotateY(0deg); }
+  to   { transform: translateZ(2px) rotateY(-168deg); }
+}
+
+.cover-inner { padding: 0 26px; }
+
+.cover-rule {
+  width: 54px;
+  height: 2px;
+  background: var(--gold-500);
+  margin: 0 auto 18px;
+  opacity: 0.9;
+}
+
+.cover-title {
+  font-family: var(--font-serif);
+  color: #f0e3c2;
+  font-size: clamp(1.6rem, 5.2vw, 2.9rem);
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+}
+
+.cover-sub {
+  color: var(--gold-500);
+  font-size: clamp(0.64rem, 1.9vw, 0.8rem);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  margin-top: 16px;
+}
+
+/* ---- enter arrow ---- */
+
+.enter {
+  margin-top: 30px;
+  opacity: 0;
+  animation: fade-up-flat 0.9s ease 3.3s forwards;
+}
+
+@keyframes fade-up-flat {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.enter-link {
+  display: inline-grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--gold-500);
+  color: var(--navy-900);
+  text-decoration: none;
+  box-shadow: 0 8px 26px rgba(201, 153, 43, 0.5);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.enter-link:hover { transform: scale(1.09); background: var(--gold-400); }
+
+.enter-link svg {
+  width: 26px; height: 26px; fill: none; stroke: currentColor;
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.enter-label {
+  display: block; margin-top: 12px; color: #c6cde0;
+  font-size: 0.82rem; letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+/* Skip straight to the opened state for anyone who asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .cover { animation: none; transform: translateZ(2px) rotateY(-168deg); }
+  .title-block, .enter { animation: none; opacity: 1; }
+  .title-block { transform: translateZ(40px); }
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="book">
+    <div class="page page-left"></div>
+    <div class="page page-right"></div>
+    <div class="spine"></div>
+
+    <div class="title-block">
+      <div>
+        <h1 class="landing-title">EduBridge</h1>
+        <p class="landing-tagline">Your bridge to higher education</p>
+      </div>
+    </div>
+
+    <div class="cover">
+      <div class="cover-inner">
+        <div class="cover-rule"></div>
+        <h2 class="cover-title">Higher Education</h2>
+        <p class="cover-sub">Open to begin</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="enter">
+    <a class="enter-link" href="login.html" aria-label="Enter EduBridge">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12h14M13 6l6 6-6 6"/>
+      </svg>
+    </a>
+    <span class="enter-label">Enter</span>
+  </div>
+</div>
+
+</body>
+</html>

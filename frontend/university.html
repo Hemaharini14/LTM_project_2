@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>University — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel" id="content">
+  <p class="hint" id="status">Loading university…</p>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+function stat(label, value, muted) {
+  return `<div class="stat">
+    <div class="stat-label">${escapeHtml(label)}</div>
+    <div class="stat-value${muted ? " muted" : ""}">${escapeHtml(String(value))}</div>
+  </div>`;
+}
+
+/** "Not reported" values are rendered muted so gaps read as gaps, not zeros. */
+function statOf(label, value, formatter) {
+  const missing = value === null || value === undefined;
+  return stat(label, missing ? "Not reported" : formatter(value), missing);
+}
+
+/**
+ * Falls back to a peer-median estimate when a figure isn't reported.
+ * Estimates are visually distinct and always show what they're based on —
+ * they must never be mistaken for a figure the university actually filed.
+ */
+function statCost(label, key, uni, formatter) {
+  const reported = uni[key];
+
+  if (reported !== null && reported !== undefined) {
+    return stat(label, formatter(reported));
+  }
+
+  const estimate = (uni.estimates || {})[key];
+
+  if (!estimate) {
+    return stat(label, "Not reported", true);
+  }
+
+  return `<div class="stat is-estimated">
+    <div class="stat-label">${escapeHtml(label)}<span class="est-tag">est.</span></div>
+    <div class="stat-value estimated">${escapeHtml(formatter(estimate.value))}</div>
+    <div class="stat-note">${escapeHtml(estimate.basis)}</div>
+  </div>`;
+}
+
+/** Shows how this campus's off-campus costs sit against state and national medians. */
+function housingContextHtml(hc) {
+  if (!hc || hc.annual === null || hc.annual === undefined) return "";
+
+  const pill = (label, percent, median) => {
+    if (percent === null || percent === undefined) return "";
+    const cheaper = percent < 0;
+    const word = cheaper ? "below" : "above";
+    return `<span class="compare-pill">
+      <strong>${Math.abs(percent)}%</strong>
+      <span class="${cheaper ? "cheaper" : "pricier"}">${word}</span>
+      the ${escapeHtml(label)} median (${money(median)})
+    </span>`;
+  };
+
+  return `<div class="housing-compare">
+    ${pill("state", hc.vs_state_percent, hc.state_median)}
+    ${pill("national", hc.vs_national_percent, hc.national_median)}
+  </div>`;
+}
+
+/** Detail view for an Indian institute: entrance-exam closing ranks in
+ *  place of an admission rate, and a policy fee band rather than a
+ *  per-institute price. */
+async function renderIndia(name, status) {
+  let uni;
+  try {
+    uni = await api(`/api/india/${encodeURIComponent(name)}`);
+  } catch (error) {
+    status.textContent = `Could not load institute: ${error.message}`;
+    return;
+  }
+
+  const reviews = uni.reviews || {};
+  const feeInr = uni.fee_band_inr_min
+    ? (uni.fee_band_inr_min === uni.fee_band_inr_max
+        ? `Rs ${uni.fee_band_inr_min.toLocaleString("en-IN")}`
+        : `Rs ${uni.fee_band_inr_min.toLocaleString("en-IN")} - ${uni.fee_band_inr_max.toLocaleString("en-IN")}`)
+    : null;
+
+  document.getElementById("content").innerHTML = `
+    <h1 class="page-title">${escapeHtml(uni.institute)}</h1>
+    <p class="page-sub">India · ${escapeHtml(uni.institute_type)} · admits through ${escapeHtml(uni.exam)}</p>
+
+    <div class="badge-row" style="margin-bottom:20px;">
+      ${uni.ranking ? `<span class="badge">World rank #${uni.ranking.university_rank}</span>` : ""}
+      <span class="badge badge-light">${uni.programs.length} branches</span>
+      <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('india:' + uni.institute)}">Compare this institute</a>
+    </div>
+
+    <h2>Tuition</h2>
+    <div class="stat-grid">
+      ${stat("Annual tuition", feeInr || "Varies by institute", !feeInr)}
+      ${uni.fee_band_usd_min ? stat("Approx. in USD", `$${uni.fee_band_usd_min.toLocaleString()}/yr`) : ""}
+    </div>
+    <p class="hint">${escapeHtml(uni.fee_note || "")}</p>
+    <p class="hint">Converted at Rs 83 to the dollar. Always confirm the current figure on the institute's own fee page.</p>
+
+    <h2>Entry requirements</h2>
+    <p class="hint">India admits on entrance-exam rank, not an acceptance rate. This institute
+      admits through <strong>${escapeHtml(uni.exam)}</strong> — the table below shows the closing
+      rank for each branch, i.e. the last rank admitted. A lower number means harder to get into.</p>
+    <p class="hint"><strong>These are ${uni.cutoff_year} figures</strong> for open-category,
+      gender-neutral seats, published by JoSAA. Cutoffs move every year, so treat them as a guide
+      to relative competitiveness rather than a target for this year's exam.</p>
+
+    <div class="table-scroll">
+      <table>
+        <tr><th>Branch</th><th>Opening rank</th><th>Closing rank</th></tr>
+        ${uni.programs.map((p) => `
+          <tr>
+            <td>${escapeHtml(p.program || "")}</td>
+            <td>${p.opening_rank != null ? Math.round(p.opening_rank).toLocaleString() : "—"}</td>
+            <td><strong>${p.closing_rank != null ? Math.round(p.closing_rank).toLocaleString() : "—"}</strong></td>
+          </tr>`).join("")}
+      </table>
+    </div>
+
+    <h2>Student voices</h2>
+    <div class="badge-row">
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.reddit_search_url || "#")}" target="_blank" rel="noopener noreferrer">Search Reddit discussions ↗</a>
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.linkedin_alumni_url || "#")}" target="_blank" rel="noopener noreferrer">Find alumni on LinkedIn ↗</a>
+    </div>
+
+    <h2>How to apply</h2>
+    <ol class="hint" style="line-height:1.9;">
+      <li>Register for ${escapeHtml(uni.exam)} and sit the exam.</li>
+      <li>Meet the Class XII eligibility criteria set by the institute.</li>
+      <li>Register for JoSAA counselling and fill in your branch preferences in order.</li>
+      <li>Wait for seat allotment across the counselling rounds.</li>
+      <li>Accept the seat, pay the fee and complete document verification.</li>
+    </ol>
+
+    <p class="hint" style="margin-top:22px;">Cutoffs come from JoSAA's published ${uni.cutoff_year}
+      seat-allocation data. Fees follow published national policy, not a per-institute price list.</p>`;
+}
+
+/** Detail view for a non-US university, which has a different data shape:
+ *  per-programme tuition, visa and insurance costs, and no admit rate. */
+async function renderInternational(name, status) {
+  let uni;
+  try {
+    uni = await api(`/api/international/${encodeURIComponent(name)}`);
+  } catch (error) {
+    status.textContent = `Could not load university: ${error.message}`;
+    return;
+  }
+
+  const r = uni.ranking;
+  const reviews = uni.reviews || {};
+  const range = uni.tuition_min === uni.tuition_max
+    ? money(uni.tuition_min)
+    : `${money(uni.tuition_min)} – ${money(uni.tuition_max)}`;
+
+  const yearOne = [uni.tuition_min, uni.rent_usd_annual, uni.visa_fee_usd, uni.insurance_usd]
+    .filter((v) => v != null)
+    .reduce((a, b) => a + b, 0);
+
+  document.getElementById("content").innerHTML = `
+    <h1 class="page-title">${escapeHtml(uni.university_name)}</h1>
+    <p class="page-sub">${escapeHtml(uni.city || "")}, ${escapeHtml(uni.country)}</p>
+
+    <div class="badge-row" style="margin-bottom:20px;">
+      ${r ? `<span class="badge">World rank #${r.university_rank}</span>`
+          : `<span class="badge badge-light">Not in world rankings</span>`}
+      <span class="badge badge-light">${uni.programs.length} programmes listed</span>
+      <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('intl:' + uni.university_name)}">Compare this university</a>
+    </div>
+
+    <h2>Tuition</h2>
+    <div class="stat-grid">
+      ${stat("Tuition per year", range)}
+      ${statOf("Living cost index", uni.living_cost_index, (v) => v.toFixed(1))}
+    </div>
+
+    <h2>Accommodation &amp; off-campus stay</h2>
+    <div class="stat-grid">
+      ${statOf("Rent per month", uni.rent_usd_monthly, money)}
+      ${statOf("Rent per year", uni.rent_usd_annual, money)}
+      ${statOf("Student visa fee", uni.visa_fee_usd, money)}
+      ${statOf("Health insurance per year", uni.insurance_usd, money)}
+    </div>
+    ${yearOne ? `<p class="hint">Indicative first-year total, tuition plus rent, visa and insurance:
+      <strong>${escapeHtml(money(yearOne))}</strong>.</p>` : ""}
+
+    <p class="hint" style="margin-top:14px;">Find actual places to stay near this campus:</p>
+    <div class="badge-row">
+      <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://www.google.com/maps/search/${encodeURIComponent("student accommodation near " + uni.university_name + " " + (uni.city || ""))}">
+        Student housing on Maps ↗</a>
+      <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://www.google.com/search?q=${encodeURIComponent("student accommodation " + uni.university_name)}">
+        Off-campus listings ↗</a>
+    </div>
+
+    <h2>Entry requirements</h2>
+    <p class="hint">${escapeHtml(uni.admission_system ||
+      "Admission requirements for this country are published by each university — check its official admissions page.")}</p>
+    <p class="hint"><strong>Note:</strong> acceptance rates are a US statistic.
+      Universities here publish entry requirements instead, so we don't show a percentage.</p>
+
+    <h2>Programmes &amp; tuition</h2>
+    <div class="table-scroll">
+      <table>
+        <tr><th>Programme</th><th>Level</th><th>Duration</th><th>Tuition / year</th></tr>
+        ${uni.programs.map((p) => `
+          <tr>
+            <td>${escapeHtml(p.program || "")}</td>
+            <td>${escapeHtml(p.level || "")}</td>
+            <td>${p.duration_years != null ? escapeHtml(p.duration_years + " yr") : "—"}</td>
+            <td>${escapeHtml(money(p.tuition_usd))}</td>
+          </tr>`).join("")}
+      </table>
+    </div>
+
+    <h2>Student voices</h2>
+    <div class="badge-row">
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.reddit_search_url || "#")}" target="_blank" rel="noopener noreferrer">Search Reddit discussions ↗</a>
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.linkedin_alumni_url || "#")}" target="_blank" rel="noopener noreferrer">Find alumni on LinkedIn ↗</a>
+    </div>
+
+    <p class="hint" style="margin-top:22px;">Tuition and living costs for non-US universities come from a
+      community-maintained international education cost dataset, so treat them as indicative and confirm
+      on the university's own site. US figures come from the US Department of Education.</p>`;
+}
+
+(async () => {
+  if (!await initPage("university.html")) return;
+
+  const params = new URLSearchParams(location.search);
+  const unitid = params.get("unitid");
+  const intl = params.get("intl");
+  const status = document.getElementById("status");
+
+  if (intl) {
+    return renderInternational(intl, status);
+  }
+
+  if (params.get("india")) {
+    return renderIndia(params.get("india"), status);
+  }
+
+  if (!unitid) {
+    status.textContent = "No university selected.";
+    return;
+  }
+
+  let uni;
+  try {
+    uni = await api(`/api/university/${unitid}`);
+  } catch (error) {
+    status.textContent = `Could not load university: ${error.message}`;
+    return;
+  }
+
+  const r = uni.ranking;
+  const reviews = uni.reviews || {};
+  const hc = uni.housing_context || {};
+
+  const actRange = (uni.act_25th != null && uni.act_75th != null)
+    ? `${uni.act_25th}–${uni.act_75th}` : null;
+
+  const fieldNames = [...new Set((uni.fields_of_study || []).map((f) => f.cip_description.replace(/\.$/, "")))];
+  const credentials = [...new Set((uni.fields_of_study || []).map((f) => f.credential_description))];
+
+  document.getElementById("content").innerHTML = `
+    <h1 class="page-title">${escapeHtml(uni.institution_name)}</h1>
+    <p class="page-sub">${escapeHtml(uni.city || "")}, ${escapeHtml(uni.state || "")}, United States
+      · ${escapeHtml(uni.control_label || "")}</p>
+
+    <div class="badge-row" style="margin-bottom:20px;">
+      ${r ? `<span class="badge">World rank #${r.university_rank}</span>` : `<span class="badge badge-light">Not in world rankings</span>`}
+      ${uni.institution_url ? `<a class="badge badge-light" href="https://${escapeHtml(uni.institution_url.replace(/^https?:\/\//, ""))}" target="_blank" rel="noopener noreferrer">Official site ↗</a>` : ""}
+      <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('us:' + uni.unitid)}">Compare this university</a>
+    </div>
+
+    <h2>Fees structure</h2>
+    <div class="stat-grid">
+      ${statCost("Out-of-state tuition", "tuition_out_state", uni, money)}
+      ${statCost("In-state tuition", "tuition_in_state", uni, money)}
+      ${statCost("Books & supplies", "books_supplies", uni, money)}
+      ${statCost("Total cost of attendance", "cost_of_attendance", uni, money)}
+    </div>
+
+    <h2>Accommodation &amp; off-campus stay</h2>
+    <div class="stat-grid">
+      ${statCost("On-campus room & board (hostel)", "roomboard_on_campus", uni, money)}
+      ${statCost("Off-campus room & board", "roomboard_off_campus", uni, money)}
+      ${hc.monthly ? stat("Off-campus, per month", money(hc.monthly)) : ""}
+      ${hc.academic_year_monthly ? stat("Per month (9-month term)", money(hc.academic_year_monthly)) : ""}
+    </div>
+
+    ${housingContextHtml(hc)}
+
+    <p class="hint" style="margin-top:14px;">Find actual places to stay near this campus:</p>
+    <div class="badge-row">
+      <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://www.google.com/maps/search/${encodeURIComponent("student housing near " + uni.institution_name + " " + (uni.city || "") + " " + (uni.state || ""))}">
+        Student housing on Maps ↗</a>
+      <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://www.google.com/search?q=${encodeURIComponent("off campus housing for students " + uni.institution_name)}">
+        Off-campus listings ↗</a>
+      ${uni.institution_url ? `<a class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+         href="https://${escapeHtml(uni.institution_url.replace(/^https?:\/\//, ""))}">University housing page ↗</a>` : ""}
+    </div>
+    <p class="hint">We send you to live listings rather than showing a fixed list, so prices and availability are current.</p>
+
+    <h2>Eligibility &amp; admission</h2>
+    <div class="stat-grid">
+      ${statOf("Admission rate", uni.admission_rate, percent)}
+      ${statOf("Average SAT", uni.sat_average, (v) => Math.round(v))}
+      ${statOf("ACT range (25th–75th)", actRange, (v) => v)}
+    </div>
+    <p class="hint">International applicants typically also need IELTS or TOEFL, and GRE/GMAT for many graduate programmes — check the university's own admissions page for its exact requirements.</p>
+
+    <h2>Placement &amp; outcomes</h2>
+    <div class="stat-grid">
+      ${statOf("Median earnings, 10 years after entry", uni.median_earnings_10yr, money)}
+      ${r ? stat("Overall academic score", r.overall_score ?? "Not reported") : ""}
+      ${r ? stat("Research score", r.research_score ?? "Not reported") : ""}
+    </div>
+    <p class="hint">Earnings are US Department of Education figures for students who received federal aid.</p>
+
+    <h2>Student voices</h2>
+    ${reviews.reddit_reviews && reviews.reddit_reviews.length ? `
+      <div class="results-grid">
+        ${reviews.reddit_reviews.map((post) => `
+          <a class="result-card" href="${escapeHtml(post.url)}" target="_blank" rel="noopener noreferrer">
+            <h3>${escapeHtml(post.title)}</h3>
+            <p class="result-meta">${escapeHtml(post.excerpt)}</p>
+            <div class="badge-row">
+              <span class="badge badge-light">r/${escapeHtml(post.subreddit)}</span>
+              <span class="badge badge-light">${post.score} upvotes</span>
+            </div>
+          </a>`).join("")}
+      </div>` : `
+      <p class="hint">${reviews.reddit_configured
+        ? "No Reddit discussions found for this university."
+        : "Live Reddit reviews are off — add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to .env to enable them."}</p>`}
+
+    <div class="badge-row" style="margin-top:14px;">
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.reddit_search_url || "#")}" target="_blank" rel="noopener noreferrer">Search Reddit discussions ↗</a>
+      <a class="btn btn-ghost" href="${escapeHtml(reviews.linkedin_alumni_url || "#")}" target="_blank" rel="noopener noreferrer">Find alumni on LinkedIn ↗</a>
+    </div>
+    <p class="hint">We link you straight to LinkedIn's own search rather than collecting alumni profiles.</p>
+
+    <h2>How to apply</h2>
+    <ol class="hint" style="line-height:1.9;">
+      <li>Check this university's official admissions page for exact requirements and deadlines.</li>
+      <li>Sit the required tests (SAT/ACT for undergraduate, GRE/GMAT for many graduate courses).</li>
+      <li>Take an English test — IELTS, TOEFL or PTE Academic — if you are an international applicant.</li>
+      <li>Prepare transcripts, statement of purpose and letters of recommendation.</li>
+      <li>Submit the application and pay the fee before the deadline.</li>
+      <li>Apply for scholarships and financial aid, then arrange your student visa once admitted.</li>
+    </ol>
+    <p class="hint">These are the general steps. This university publishes its own process
+      ${uni.institution_url ? `on <a href="https://${escapeHtml(uni.institution_url.replace(/^https?:\/\//, ""))}" target="_blank" rel="noopener noreferrer">its website</a>` : "on its website"}.</p>
+
+    <h2>Fields of study offered</h2>
+    <p class="hint">${fieldNames.length} programmes · ${escapeHtml(credentials.join(", "))}</p>
+    <div class="badge-row" style="margin-top:10px;">
+      ${fieldNames.slice(0, 40).map((f) => `<span class="badge badge-light">${escapeHtml(f)}</span>`).join("")}
+    </div>`;
+})();
+</script>
+</body>
+</html>

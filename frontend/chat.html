@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ask EduBridge — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Ask EduBridge</h1>
+  <p class="page-sub">Answers are retrieved from real university records, not made up.</p>
+
+  <div class="badge-row" style="margin-bottom:18px;">
+    <button class="badge badge-light example" type="button">Affordable US universities for computer science</button>
+    <button class="badge badge-light example" type="button">Which universities have the lowest hostel fees?</button>
+    <button class="badge badge-light example" type="button">What SAT score do I need for a top-ranked university?</button>
+  </div>
+
+  <div class="chat-log" id="chat-log"></div>
+
+  <form class="chat-form" id="chat-form">
+    <input type="text" id="chat-input" placeholder="Ask about universities, fees, courses or admissions…" required>
+    <button class="btn btn-primary" type="submit">Ask</button>
+  </form>
+
+  <details style="margin-top:20px;">
+    <summary class="hint">What data was used?</summary>
+    <div id="sources" class="hint" style="margin-top:10px;"></div>
+  </details>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+(async () => {
+  // The floating bot is redundant on the dedicated chat page.
+  if (!await initPage("chat.html", { bot: false })) return;
+
+  const log = document.getElementById("chat-log");
+  const input = document.getElementById("chat-input");
+  const sources = document.getElementById("sources");
+
+  document.querySelectorAll(".example").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      input.value = btn.textContent;
+      document.getElementById("chat-form").requestSubmit();
+    });
+  });
+
+  document.getElementById("chat-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const question = input.value.trim();
+    if (!question) return;
+
+    log.innerHTML += `<div class="msg msg-user">${escapeHtml(question)}</div>`;
+    input.value = "";
+    log.innerHTML += `<div class="msg msg-bot" id="pending">Searching university records…</div>`;
+    window.scrollTo(0, document.body.scrollHeight);
+
+    try {
+      const result = await api("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+
+      document.getElementById("pending").outerHTML =
+        `<div class="msg msg-bot">${escapeHtml(result.answer)}</div>`;
+
+      sources.innerHTML = result.sources
+        .map((s, i) => `<p>[${i + 1}] ${escapeHtml(s.slice(0, 260))}…</p>`)
+        .join("");
+    } catch (error) {
+      document.getElementById("pending").outerHTML =
+        `<div class="msg msg-bot">${escapeHtml(error.message)}</div>`;
+    }
+
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+})();
+</script>
+</body>
+</html>

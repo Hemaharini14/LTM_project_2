@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Admin</h1>
+  <p class="page-sub">Platform activity overview.</p>
+
+  <p class="hint" id="status">Loading…</p>
+  <div id="content" hidden></div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js"></script>
+<script>
+(async () => {
+  if (!await initPage("admin.html", { bot: false })) return;
+
+  const status = document.getElementById("status");
+  const content = document.getElementById("content");
+
+  let stats;
+  try {
+    stats = await api("/api/admin/stats");
+  } catch (error) {
+    // Non-admins get 403 from the server; the UI must not pretend otherwise.
+    status.textContent = `Access denied: ${error.message}`;
+    return;
+  }
+
+  status.hidden = true;
+  content.hidden = false;
+  content.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Registered users</div><div class="stat-value">${stats.total_users}</div></div>
+      <div class="stat"><div class="stat-label">Total activity</div><div class="stat-value">${stats.total_queries}</div></div>
+      <div class="stat"><div class="stat-label">Indexed institutions</div><div class="stat-value">${stats.indexed_institutions.toLocaleString()}</div></div>
+    </div>
+
+    <h2>Recent signups</h2>
+    <div class="table-scroll">
+      <table>
+        <tr><th>Email</th><th>Name</th><th>Role</th><th>Joined</th></tr>
+        ${stats.recent_users.map((u) => `
+          <tr>
+            <td>${escapeHtml(u.email)}</td>
+            <td>${escapeHtml(u.full_name || "")}</td>
+            <td>${u.is_admin ? "Admin" : "Student"}</td>
+            <td>${escapeHtml((u.created_at || "").replace("T", " "))}</td>
+          </tr>`).join("")}
+      </table>
+    </div>
+
+    <h2>Most viewed universities</h2>
+    ${stats.popular_colleges.length ? `
+      <div class="table-scroll">
+        <table>
+          <tr><th>University</th><th>Views</th></tr>
+          ${stats.popular_colleges.map((c) => `
+            <tr><td>${escapeHtml(c.name)}</td><td>${c.views}</td></tr>`).join("")}
+        </table>
+      </div>` : `<p class="hint">No university views recorded yet.</p>`}`;
+})();
+</script>
+</body>
+</html>
