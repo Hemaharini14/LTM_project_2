@@ -225,3 +225,25 @@
   .match-bar { grid-template-columns: 116px 1fr 40px; }
   .dial { margin: 0 auto; }
 }
+
+
+/* ---------- feature grid ---------- */
+
+.feature-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px; text-align: left;
+}
+.feature-tile {
+  display: grid; gap: 6px; padding: 22px; border-radius: 16px;
+  background: var(--x-glass); border: 1px solid var(--x-glass-line);
+  backdrop-filter: blur(18px); text-decoration: none;
+  transition: transform 0.28s cubic-bezier(.2,.8,.2,1), border-color 0.28s, background 0.28s;
+}
+.feature-tile:hover {
+  transform: translateY(-4px);
+  border-color: rgba(53,214,255,0.42);
+  background: rgba(53,214,255,0.07);
+}
+.feature-tile em { font-style: normal; font-size: 1.35rem; line-height: 1; }
+.feature-tile b { font-family: var(--x-serif); font-size: 1.02rem; color: #fff; }
+.feature-tile span { font-size: 0.82rem; color: var(--x-muted); line-height: 1.5; }

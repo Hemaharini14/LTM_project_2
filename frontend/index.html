@@ -20,11 +20,13 @@
     </svg>
     <span>EduBridge</span>
   </a>
-  <div class="x-nav-links">
-    <a href="#preferences">Preferences</a>
-    <a href="#explorer">Explorer</a>
+  <div class="x-nav-links" id="nav-links">
+    <a href="preferences.html">Preferences</a>
+    <a href="resume.html">Résumé</a>
+    <a href="compare.html">Compare</a>
     <a href="chat.html">AI Advisor</a>
-    <a href="login.html">Sign in</a>
+    <a href="exams.html">Exams</a>
+    <a href="login.html" id="nav-auth">Sign in</a>
   </div>
 </nav>
 
@@ -44,7 +46,7 @@
 
       <div class="cta-row" data-reveal>
         <a class="x-btn x-btn-primary" href="preferences.html">Start Your Journey &rarr;</a>
-        <a class="x-btn x-btn-ghost" href="#explorer">Explore Universities</a>
+        <a class="x-btn x-btn-ghost" href="compare.html">Explore Universities</a>
       </div>
 
       <div class="hero-stats" data-reveal>
@@ -209,6 +211,42 @@
     </div>
   </section>
 
+  <!-- ============ EVERYTHING IN EDUBRIDGE ============ -->
+  <section class="x-section center" id="features">
+    <p class="kicker" data-rise>The whole platform</p>
+    <h2 data-rise>Everything in EduBridge</h2>
+    <p class="sub" data-rise>
+      The cinematic front door is one way in. These are the tools behind it.
+    </p>
+
+    <div class="feature-grid" data-rise>
+      <a class="feature-tile" href="dashboard.html">
+        <em>📊</em><b>Dashboard</b><span>Education news and your starting point</span>
+      </a>
+      <a class="feature-tile" href="resume.html">
+        <em>📄</em><b>Résumé upload</b><span>We read your PDF and match you automatically</span>
+      </a>
+      <a class="feature-tile" href="preferences.html">
+        <em>🎯</em><b>Preferences</b><span>Country, field, budget, skills, certifications</span>
+      </a>
+      <a class="feature-tile" href="compare.html">
+        <em>⇄</em><b>Compare</b><span>Any two universities, across countries</span>
+      </a>
+      <a class="feature-tile" href="chat.html">
+        <em>💬</em><b>Ask EduBridge</b><span>RAG answers grounded in real university data</span>
+      </a>
+      <a class="feature-tile" href="exams.html">
+        <em>📚</em><b>Entrance exams</b><span>IELTS, TOEFL, GRE, GMAT, SAT, ACT and more</span>
+      </a>
+      <a class="feature-tile" href="history.html">
+        <em>🕘</em><b>History</b><span>Your searches, questions and viewed colleges</span>
+      </a>
+      <a class="feature-tile" href="classic.html">
+        <em>📖</em><b>Classic entrance</b><span>The original book opening</span>
+      </a>
+    </div>
+  </section>
+
   <!-- ============ FINALE ============ -->
   <section class="x-section finale" id="finale">
     <p class="kicker" data-rise>The last step</p>
@@ -308,6 +346,39 @@ function fadeBackdrop() {
 
 window.addEventListener("scroll", fadeBackdrop, { passive: true });
 fadeBackdrop();
+
+/** Mirrors the signed-in state the rest of the app already tracks. */
+(async () => {
+  try {
+    const user = await (await fetch("/api/auth/me", { credentials: "same-origin" })).json();
+    if (!user || !user.email) return;
+
+    const links = document.getElementById("nav-links");
+    const auth = document.getElementById("nav-auth");
+
+    auth.textContent = "Sign out";
+    auth.href = "#";
+    auth.addEventListener("click", async (event) => {
+      event.preventDefault();
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      window.location.reload();
+    });
+
+    const dashboard = document.createElement("a");
+    dashboard.href = "dashboard.html";
+    dashboard.textContent = "Dashboard";
+    links.prepend(dashboard);
+
+    if (user.is_admin) {
+      const admin = document.createElement("a");
+      admin.href = "admin.html";
+      admin.textContent = "Admin";
+      links.insertBefore(admin, auth);
+    }
+  } catch {
+    /* signed out is the default the markup already shows */
+  }
+})();
 
 revealOnScroll();
 initOrbs();
