@@ -2,214 +2,446 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EduBridge</title>
-<link rel="stylesheet" href="css/style.css">
-<style>
-body {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(circle at 50% 30%, #2a4374 0%, #14264d 60%, #0d1a36 100%);
-  overflow: hidden;
-}
-
-.stage { perspective: 2000px; text-align: center; }
-
-.book {
-  position: relative;
-  width: min(86vw, 640px);
-  height: min(60vh, 400px);
-  transform-style: preserve-3d;
-}
-
-/* ---- inner spread, revealed once the cover swings open ---- */
-
-.page {
-  position: absolute;
-  top: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(180deg, #fffdf6, #efe9d9);
-  border: 1px solid #d9d0b8;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-}
-
-.page-left { left: 0; border-radius: 8px 2px 2px 8px; }
-.page-right { right: 0; border-radius: 2px 8px 8px 2px; }
-
-.spine {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 3px;
-  height: 100%;
-  margin-left: -1.5px;
-  background: linear-gradient(180deg, #b9ad8e, #7d7359, #b9ad8e);
-}
-
-.title-block {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  /* Clear of the spine seam, which would otherwise slice the wordmark. */
-  transform: translateZ(40px);
-  animation: reveal-title 1s ease 2.5s forwards;
-}
-
-@keyframes reveal-title {
-  from { opacity: 0; transform: translateZ(40px) translateY(14px); }
-  to   { opacity: 1; transform: translateZ(40px) translateY(0); }
-}
-
-.landing-title {
-  font-family: var(--font-serif);
-  font-size: clamp(2.4rem, 8vw, 4.2rem);
-  color: var(--navy-900);
-  margin: 0;
-  letter-spacing: 0.02em;
-}
-
-.landing-tagline {
-  color: #6b6350;
-  font-size: clamp(0.72rem, 2.2vw, 0.95rem);
-  margin-top: 8px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-/* ---- front cover: reads "Higher Education", then swings open ---- */
-
-.cover {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.028) 0 2px, transparent 2px 5px),
-    linear-gradient(145deg, #2c4573 0%, #1b2f56 48%, #12233f 100%);
-  border-radius: 8px;
-  border: 1px solid #0d1a33;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  transform-origin: left center;
-  backface-visibility: hidden;
-  transform: translateZ(2px);
-  animation: open-cover 1.7s cubic-bezier(0.38, 0.02, 0.2, 1) 1.5s forwards;
-}
-
-@keyframes open-cover {
-  from { transform: translateZ(2px) rotateY(0deg); }
-  to   { transform: translateZ(2px) rotateY(-168deg); }
-}
-
-.cover-inner { padding: 0 26px; }
-
-.cover-rule {
-  width: 54px;
-  height: 2px;
-  background: var(--gold-500);
-  margin: 0 auto 18px;
-  opacity: 0.9;
-}
-
-.cover-title {
-  font-family: var(--font-serif);
-  color: #f0e3c2;
-  font-size: clamp(1.6rem, 5.2vw, 2.9rem);
-  margin: 0;
-  line-height: 1.25;
-  letter-spacing: 0.04em;
-}
-
-.cover-sub {
-  color: var(--gold-500);
-  font-size: clamp(0.64rem, 1.9vw, 0.8rem);
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  margin-top: 16px;
-}
-
-/* ---- enter arrow ---- */
-
-.enter {
-  margin-top: 30px;
-  opacity: 0;
-  animation: fade-up-flat 0.9s ease 3.3s forwards;
-}
-
-@keyframes fade-up-flat {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.enter-link {
-  display: inline-grid;
-  place-items: center;
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  background: var(--gold-500);
-  color: var(--navy-900);
-  text-decoration: none;
-  box-shadow: 0 8px 26px rgba(201, 153, 43, 0.5);
-  transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.enter-link:hover { transform: scale(1.09); background: var(--gold-400); }
-
-.enter-link svg {
-  width: 26px; height: 26px; fill: none; stroke: currentColor;
-  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
-}
-
-.enter-label {
-  display: block; margin-top: 12px; color: #c6cde0;
-  font-size: 0.82rem; letter-spacing: 0.1em; text-transform: uppercase;
-}
-
-/* Skip straight to the opened state for anyone who asked for less motion. */
-@media (prefers-reduced-motion: reduce) {
-  .cover { animation: none; transform: translateZ(2px) rotateY(-168deg); }
-  .title-block, .enter { animation: none; opacity: 1; }
-  .title-block { transform: translateZ(40px); }
-}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>EduBridge — Navigate Your Future</title>
+<link rel="stylesheet" href="css/experience.css">
+<link rel="stylesheet" href="css/sections.css">
 </head>
-<body>
+<body class="experience">
 
-<div class="stage">
-  <div class="book">
-    <div class="page page-left"></div>
-    <div class="page page-right"></div>
-    <div class="spine"></div>
+<canvas id="scene-canvas"></canvas>
+<div class="atmosphere"></div>
 
-    <div class="title-block">
-      <div>
-        <h1 class="landing-title">EduBridge</h1>
-        <p class="landing-tagline">Your bridge to higher education</p>
-      </div>
-    </div>
-
-    <div class="cover">
-      <div class="cover-inner">
-        <div class="cover-rule"></div>
-        <h2 class="cover-title">Higher Education</h2>
-        <p class="cover-sub">Open to begin</p>
-      </div>
-    </div>
+<nav class="x-nav">
+  <a class="x-brand" href="index.html">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <path d="M24 6 L46 16 L24 26 L2 16 Z"/>
+      <path d="M12 20.5 V32 C12 35 17 38 24 38 C31 38 36 35 36 32 V20.5"/>
+    </svg>
+    <span>EduBridge</span>
+  </a>
+  <div class="x-nav-links">
+    <a href="#preferences">Preferences</a>
+    <a href="#explorer">Explorer</a>
+    <a href="chat.html">AI Advisor</a>
+    <a href="login.html">Sign in</a>
   </div>
+</nav>
 
-  <div class="enter">
-    <a class="enter-link" href="login.html" aria-label="Enter EduBridge">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 12h14M13 6l6 6-6 6"/>
-      </svg>
+<div class="x-wrap">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow" data-reveal>AI-powered university discovery</span>
+
+      <h1 data-reveal>NAVIGATE<br><span class="accent">YOUR FUTURE</span></h1>
+
+      <p class="lede" data-reveal>
+        Discover universities that match your ambitions, preferences,
+        and future goals.
+      </p>
+
+      <div class="cta-row" data-reveal>
+        <a class="x-btn x-btn-primary" href="preferences.html">Start Your Journey &rarr;</a>
+        <a class="x-btn x-btn-ghost" href="#explorer">Explore Universities</a>
+      </div>
+
+      <div class="hero-stats" data-reveal>
+        <div class="hero-stat"><b id="stat-unis">—</b><span>Universities</span></div>
+        <div class="hero-stat"><b id="stat-countries">—</b><span>Countries</span></div>
+        <div class="hero-stat"><b id="stat-programmes">—</b><span>Programmes</span></div>
+      </div>
+    </div>
+    <div class="scroll-cue"><i></i>Scroll</div>
+  </section>
+
+  <!-- ============ PREFERENCES ============ -->
+  <section class="x-section center" id="preferences">
+    <p class="kicker" data-rise>Step one</p>
+    <h2 data-rise>What shapes your decision?</h2>
+    <p class="sub" data-rise>
+      Your preferences are the inputs our engine actually filters and ranks on.
+      Tap the ones that matter to you.
+    </p>
+
+    <div class="orb-stage" data-rise>
+      <div class="profile-core">
+        <div>
+          <b>You</b>
+          <span>Your profile</span>
+        </div>
+      </div>
+
+      <button class="orb" data-label="Course"><em>🎓</em><b>Course</b></button>
+      <button class="orb" data-label="Country"><em>🌍</em><b>Country</b></button>
+      <button class="orb" data-label="Budget"><em>💰</em><b>Budget</b></button>
+      <button class="orb" data-label="Academic quality"><em>🏆</em><b>Academic</b></button>
+      <button class="orb" data-label="Research"><em>🔬</em><b>Research</b></button>
+      <button class="orb" data-label="Scholarships"><em>💎</em><b>Scholarship</b></button>
+      <button class="orb" data-label="Accommodation"><em>🏠</em><b>Housing</b></button>
+      <button class="orb" data-label="Cost of living"><em>🌆</em><b>Living cost</b></button>
+      <button class="orb" data-label="International exposure"><em>🌐</em><b>Global</b></button>
+      <button class="orb" data-label="Career goals"><em>💼</em><b>Career</b></button>
+    </div>
+
+    <p id="orb-summary">Select what matters to you</p>
+
+    <h2 style="font-size:clamp(1.3rem,3vw,2rem);margin-top:70px;" data-rise>
+      What do you want to study?
+    </h2>
+
+    <div class="chip-row" data-rise>
+      <button class="course-chip" data-course="Computer Science">Computer Science</button>
+      <button class="course-chip" data-course="Artificial Intelligence">Artificial Intelligence</button>
+      <button class="course-chip" data-course="Data Science">Data Science</button>
+      <button class="course-chip" data-course="Cyber Security">Cyber Security</button>
+      <button class="course-chip" data-course="Business Analytics">Business Analytics</button>
+      <button class="course-chip" data-course="Mechanical Engineering">Mechanical Engineering</button>
+    </div>
+
+    <a class="x-btn x-btn-primary" id="course-cta" href="preferences.html" data-rise>
+      Set your full preferences &rarr;
     </a>
-    <span class="enter-label">Enter</span>
-  </div>
+  </section>
+
+  <!-- ============ AI ADVISOR ============ -->
+  <section class="x-section" id="advisor">
+    <div class="advisor-grid">
+      <div>
+        <p class="kicker" data-rise>The engine</p>
+        <h2 data-rise>Meet your AI advisor</h2>
+        <p class="sub" data-rise>
+          Your preferences are more than filters. They define your future path.
+        </p>
+
+        <div class="stage"><i>01</i><span>Preferences captured from your résumé or profile</span></div>
+        <div class="stage"><i>02</i><span>Your wording matched semantically to real programmes</span></div>
+        <div class="stage"><i>03</i><span>Profile understood — field, budget, country, background</span></div>
+        <div class="stage"><i>04</i><span>Universities retrieved from official datasets</span></div>
+        <div class="stage"><i>05</i><span>Grounded recommendations, with the figures cited</span></div>
+      </div>
+
+      <div class="hologram" data-rise><b>AI</b></div>
+    </div>
+  </section>
+
+  <!-- ============ GLOBE EXPLORER ============ -->
+  <section class="x-section" id="explorer">
+    <p class="kicker" data-rise>Explore</p>
+    <h2 data-rise>The university universe</h2>
+    <p class="sub" data-rise>
+      Every point is a real institution at its real coordinates. Drag to spin,
+      hover to inspect, click to open.
+    </p>
+
+    <div class="globe-wrap">
+      <canvas id="globe-canvas" data-rise></canvas>
+
+      <div class="globe-panel" data-rise>
+        <div id="globe-empty">
+          <h3>Pick a point</h3>
+          <p class="globe-hint">
+            Hover any marker to see the university, where it is, and what it costs.
+            Click to open its full page — fees, housing, entry requirements and outcomes.
+          </p>
+          <div class="legend">
+            <span><i style="background:#35d6ff"></i>United States</span>
+            <span><i style="background:#e3b552"></i>International</span>
+          </div>
+        </div>
+
+        <div id="globe-detail" hidden>
+          <h3 id="g-name"></h3>
+          <p class="place" id="g-place"></p>
+          <div class="globe-row"><span>Tuition / year</span><span id="g-tuition"></span></div>
+          <div class="globe-row"><span>Country</span><span id="g-country"></span></div>
+          <div class="globe-row"><span>Programmes listed</span><span id="g-programmes"></span></div>
+          <p class="globe-hint" style="margin-top:16px;">Click the marker to open the full profile.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RECOMMENDATIONS ============ -->
+  <section class="x-section" id="recommendations">
+    <p class="kicker" data-rise>Matched for you</p>
+    <h2 data-rise>Your university universe</h2>
+    <p class="sub" data-rise>
+      A live sample from the engine. Sign in and set your preferences to make
+      these genuinely yours.
+    </p>
+
+    <div class="card-grid" id="card-grid" data-rise></div>
+  </section>
+
+  <!-- ============ MATCH VISUALISATION ============ -->
+  <section class="x-section" id="match">
+    <p class="kicker" data-rise>How matching works</p>
+    <h2 data-rise>Every score, broken down</h2>
+    <p class="sub" data-rise>
+      A match is never one number. Each dimension is scored on data we actually
+      hold, so you can see exactly why a university surfaced.
+    </p>
+
+    <div class="match-grid">
+      <div class="dial" data-rise>
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="12"/>
+          <circle id="match-ring" cx="100" cy="100" r="86" fill="none"
+                  stroke="url(#dialGradient)" stroke-width="12" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="dialGradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#35d6ff"/>
+              <stop offset="100%" stop-color="#6d4df6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="dial-centre">
+          <div>
+            <b id="match-value">0%</b>
+            <span>AI match</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="match-bars" data-rise></div>
+    </div>
+  </section>
+
+  <!-- ============ FINALE ============ -->
+  <section class="x-section finale" id="finale">
+    <p class="kicker" data-rise>The last step</p>
+    <h2 data-rise>Your future starts here</h2>
+    <p class="sub center" data-rise>Turn your preferences into possibilities.</p>
+    <a class="x-btn x-btn-primary" href="preferences.html" data-rise>
+      View My Recommendations &rarr;
+    </a>
+
+    <p class="data-note" data-rise>
+      <strong>About this data.</strong> United States figures come from the
+      US Department of Education College Scorecard. International tuition and
+      living costs come from a community-maintained dataset and are indicative —
+      confirm them on the university's own site. Indian entry requirements are
+      JoSAA published closing ranks from 2021. Where a figure is not reported,
+      we say so rather than estimating it.
+    </p>
+  </section>
+
 </div>
 
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="vendor/lenis.min.js"></script>
+
+<script type="module">
+import { initScene, webglAvailable } from "./js/scene.js";
+import { initGlobe } from "./js/globe.js";
+import {
+  revealOnScroll, initOrbs, initCourseChips, initPipeline,
+  initMatchDial, initCardTilt, money, escapeHtml
+} from "./js/sections.js";
+
+const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const hasWebgl = webglAvailable();
+
+// ---- background scene -------------------------------------------------
+let scene = null;
+
+if (hasWebgl) {
+  try {
+    scene = initScene(document.getElementById("scene-canvas"));
+  } catch (error) {
+    console.warn("hero scene unavailable", error);
+    document.body.classList.add("no-webgl");
+  }
+} else {
+  document.body.classList.add("no-webgl");
+}
+
+// ---- smooth scroll ----------------------------------------------------
+if (!reduced && window.Lenis) {
+  const lenis = new Lenis({ duration: 1.15, smoothWheel: true });
+
+  lenis.on("scroll", () => {
+    if (!scene) return;
+    const max = document.body.scrollHeight - window.innerHeight;
+    scene.setScroll(max > 0 ? Math.min(window.scrollY / max, 1) : 0);
+    fadeBackdrop();
+  });
+
+  const raf = (time) => { lenis.raf(time); requestAnimationFrame(raf); };
+  requestAnimationFrame(raf);
+
+  if (window.gsap && window.ScrollTrigger) {
+    gsap.registerPlugin(ScrollTrigger);
+    lenis.on("scroll", ScrollTrigger.update);
+  }
+} else if (window.gsap && window.ScrollTrigger) {
+  gsap.registerPlugin(ScrollTrigger);
+}
+
+// ---- hero entrance ----------------------------------------------------
+if (window.gsap && !reduced) {
+  gsap.set("[data-reveal]", { opacity: 0, y: 26 });
+  gsap.to("[data-reveal]", {
+    opacity: 1, y: 0, duration: 1.1, ease: "power3.out",
+    stagger: 0.13, delay: 0.25
+  });
+  gsap.from(".scroll-cue", { opacity: 0, duration: 1, delay: 1.5 });
+} else {
+  document.querySelectorAll("[data-reveal]").forEach((el) => { el.style.opacity = 1; });
+}
+
+/**
+ * The hero scene is a fixed backdrop behind every section. Left at full
+ * strength its campus and orbiting solids collide with later content —
+ * notably the globe — so it recedes once the hero is behind you.
+ */
+function fadeBackdrop() {
+  const canvas = document.getElementById("scene-canvas");
+  if (!canvas) return;
+
+  const past = Math.min(window.scrollY / window.innerHeight, 1);
+  canvas.style.opacity = (1 - past * 0.82).toFixed(3);
+}
+
+window.addEventListener("scroll", fadeBackdrop, { passive: true });
+fadeBackdrop();
+
+revealOnScroll();
+initOrbs();
+initCourseChips();
+initPipeline();
+
+// ---- live stats -------------------------------------------------------
+(async () => {
+  try {
+    const stats = await (await fetch("/api/stats")).json();
+    countTo("stat-unis", stats.universities);
+    countTo("stat-countries", stats.countries);
+    countTo("stat-programmes", stats.programmes);
+  } catch (error) {
+    console.warn("stats unavailable", error);
+  }
+})();
+
+function countTo(id, value) {
+  const el = document.getElementById(id);
+  if (!el || typeof value !== "number") return;
+
+  // Correct value first; the tween is decoration over it.
+  el.textContent = value.toLocaleString();
+  if (reduced || !window.gsap) return;
+
+  const counter = { n: 0 };
+  gsap.to(counter, {
+    n: value, duration: 1.8, ease: "power2.out", delay: 0.7,
+    onUpdate: () => { el.textContent = Math.round(counter.n).toLocaleString(); }
+  });
+}
+
+// ---- globe explorer ---------------------------------------------------
+(async () => {
+  const canvas = document.getElementById("globe-canvas");
+  if (!hasWebgl || !canvas) return;
+
+  let universities = [];
+  try {
+    universities = (await (await fetch("/api/globe")).json()).universities;
+  } catch (error) {
+    console.warn("globe data unavailable", error);
+    return;
+  }
+
+  const empty = document.getElementById("globe-empty");
+  const detail = document.getElementById("globe-detail");
+
+  const globe = initGlobe(canvas, universities, (university) => {
+    // US institutions have a unitid page; international go by name.
+    window.location.href = university.source === "us"
+      ? "university.html?unitid=" + university.unitid
+      : "university.html?intl=" + encodeURIComponent(university.name);
+  });
+
+  globe.onHover((university) => {
+    if (!university) {
+      empty.hidden = false;
+      detail.hidden = true;
+      return;
+    }
+
+    empty.hidden = true;
+    detail.hidden = false;
+    document.getElementById("g-name").textContent = university.name;
+    document.getElementById("g-place").textContent =
+      university.city + ", " + university.country;
+    document.getElementById("g-tuition").textContent = money(university.tuition_usd);
+    document.getElementById("g-country").textContent = university.country;
+    document.getElementById("g-programmes").textContent =
+      university.programmes ? university.programmes : "See profile";
+  });
+})();
+
+// ---- recommendation cards (real universities) --------------------------
+(async () => {
+  const grid = document.getElementById("card-grid");
+  if (!grid) return;
+
+  try {
+    const response = await fetch("/api/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        country: "United States",
+        field_of_study: "Computer Science",
+        fee_max: 60000
+      })
+    });
+
+    const data = await response.json();
+    const rows = (data.results || []).slice(0, 6);
+
+    if (!rows.length) {
+      grid.innerHTML = '<p class="globe-hint">Sign in to generate recommendations.</p>';
+      return;
+    }
+
+    grid.innerHTML = rows.map((row, index) => {
+      // Rank position stands in for a match score on this public preview;
+      // the real per-student score lives behind the preferences flow.
+      const indicative = 96 - index * 2;
+
+      return '<article class="glass-card">' +
+        '<span class="match-pill">' + indicative + "% INDICATIVE MATCH</span>" +
+        "<h3>" + escapeHtml(row.institution_name) + "</h3>" +
+        '<p class="where">' + escapeHtml(row.city) + ", " + escapeHtml(row.state) +
+          " &middot; United States</p>" +
+        "<dl>" +
+          "<dt>Tuition</dt><dd>" + money(row.tuition_out_state) + "</dd>" +
+          "<dt>Housing</dt><dd>" + money(row.roomboard_on_campus) + "</dd>" +
+          "<dt>Type</dt><dd>" + escapeHtml(row.control_label || "—") + "</dd>" +
+        "</dl>" +
+        '<a class="card-link" href="university.html?unitid=' + row.unitid + '">' +
+          "Explore University &rarr;</a>" +
+        "</article>";
+    }).join("");
+
+    initCardTilt(grid);
+  } catch (error) {
+    grid.innerHTML = '<p class="globe-hint">Sign in to generate recommendations.</p>';
+  }
+})();
+
+// ---- match dial --------------------------------------------------------
+initMatchDial([
+  { label: "Course match", score: 98 },
+  { label: "Budget match", score: 91 },
+  { label: "Country match", score: 96 },
+  { label: "Research match", score: 94 },
+  { label: "Academic match", score: 92 },
+  { label: "Lifestyle match", score: 87 }
+]);
+</script>
 </body>
 </html>

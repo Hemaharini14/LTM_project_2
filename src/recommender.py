@@ -285,7 +285,8 @@ def recommend_us_institutions(
             i.state,
             i.control_label,
             i.tuition_in_state,
-            i.tuition_out_state
+            i.tuition_out_state,
+            i.roomboard_on_campus
         FROM us_institutions i
         WHERE {" AND ".join(conditions)}
         {order_clause}
@@ -1099,3 +1100,53 @@ def search_all(term, limit=8):
         })
 
     return results
+
+
+# ============================================================
+# GLOBE DATA
+# ============================================================
+
+def get_globe_universities(limit_per_source=420):
+    """
+    Universities positioned by coordinates precomputed at build time.
+    Joining city names at request time meant scanning 50,250 cities per
+    row, which took minutes; these columns are filled once instead.
+    """
+
+    conn = get_connection()
+
+    international = conn.execute(
+        """
+        SELECT NULL AS unitid, university_name AS name, country, city,
+               latitude, longitude,
+               MIN(tuition_usd) AS tuition_usd,
+               COUNT(*) AS programmes,
+               'intl' AS source
+        FROM international_programs
+        WHERE latitude IS NOT NULL AND country != 'United States'
+        GROUP BY university_name, country, city, latitude, longitude
+        ORDER BY tuition_usd DESC
+        LIMIT ?
+        """,
+        (limit_per_source,)
+    ).fetchall()
+
+    american = conn.execute(
+        """
+        SELECT unitid, institution_name AS name, 'United States' AS country,
+               city, latitude, longitude,
+               tuition_out_state AS tuition_usd,
+               0 AS programmes, 'us' AS source
+        FROM us_institutions
+        WHERE latitude IS NOT NULL
+          AND grants_degree = 1
+          AND median_earnings_10yr IS NOT NULL
+        ORDER BY median_earnings_10yr DESC
+        LIMIT ?
+        """,
+        (limit_per_source,)
+    ).fetchall()
+
+    conn.close()
+
+    return [dict(r) for r in international] + [dict(r) for r in american]

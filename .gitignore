@@ -18,6 +18,9 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Vector store (rebuild with: python -m src.vector_store)
 chroma_db/

@@ -23,6 +23,7 @@ from src.recommender import (
     get_institution_detail,
     get_comparable,
     get_india_detail,
+    get_globe_universities,
     get_international_detail,
     get_international_university_names,
     get_us_filter_options,
@@ -419,6 +420,49 @@ def compare(a: str, b: str):
 @app.get("/api/search/all")
 def search_everywhere(q: str):
     return {"results": search_all(q)}
+
+
+# ============================================================
+# PUBLIC STATS
+# ============================================================
+
+@app.get("/api/stats")
+def stats():
+    """Real counts for the landing hero — no signin required."""
+
+    from src.db import get_connection
+
+    conn = get_connection()
+
+    def scalar(query):
+        return conn.execute(query).fetchone()[0]
+
+    payload = {
+        "universities": (
+            scalar("SELECT COUNT(*) FROM us_institutions")
+            + scalar("SELECT COUNT(DISTINCT university_name) FROM international_programs")
+            + scalar("SELECT COUNT(DISTINCT institute) FROM india_cutoffs")
+        ),
+        "countries": scalar(
+            "SELECT COUNT(DISTINCT country) FROM international_programs"
+        ),
+        "programmes": (
+            scalar("SELECT COUNT(*) FROM us_fields_of_study")
+            + scalar("SELECT COUNT(*) FROM international_programs")
+            + scalar("SELECT COUNT(*) FROM india_cutoffs")
+        )
+    }
+
+    conn.close()
+
+    return payload
+
+
+@app.get("/api/globe")
+def globe():
+    """Universities with real coordinates for the 3D explorer."""
+
+    return {"universities": get_globe_universities()}
 
 
 # ============================================================

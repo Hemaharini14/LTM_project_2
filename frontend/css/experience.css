@@ -1,0 +1,180 @@
+/* Cinematic experience layer — dark, glass, volumetric.
+   Kept separate from style.css so the classic theme stays intact. */
+
+:root {
+  --x-midnight: #060a18;
+  --x-navy: #0b1430;
+  --x-deep: #122152;
+  --x-violet: #6d4df6;
+  --x-cyan: #35d6ff;
+  --x-gold: #e3b552;
+  --x-text: #eaf0ff;
+  --x-muted: #93a1c4;
+  --x-glass: rgba(255, 255, 255, 0.055);
+  --x-glass-line: rgba(255, 255, 255, 0.14);
+  --x-serif: Georgia, "Times New Roman", serif;
+  --x-sans: "Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+html, body { margin: 0; padding: 0; background: var(--x-midnight); }
+
+body.experience {
+  color: var(--x-text);
+  font-family: var(--x-sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The canvas sits behind everything and never intercepts clicks. */
+#scene-canvas {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none; display: block;
+  transition: opacity 0.35s linear;
+}
+
+/* Vignette + atmospheric haze over the 3D layer */
+.atmosphere {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(53,214,255,0.10), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 78% 25%, rgba(109,77,246,0.13), transparent 70%),
+    radial-gradient(ellipse 120% 90% at 50% 50%, transparent 40%, rgba(6,10,24,0.86) 100%);
+}
+
+.x-wrap { position: relative; z-index: 2; }
+
+/* ---------- top bar ---------- */
+
+.x-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px clamp(20px, 5vw, 58px);
+  backdrop-filter: blur(14px);
+  background: linear-gradient(180deg, rgba(6,10,24,0.72), transparent);
+}
+
+.x-brand { display: flex; align-items: center; gap: 11px; text-decoration: none; }
+.x-brand svg { width: 26px; height: 26px; fill: none; stroke: var(--x-gold); stroke-width: 2; stroke-linejoin: round; }
+.x-brand span { font-family: var(--x-serif); font-size: 1.16rem; letter-spacing: 0.02em; color: #fff; }
+
+.x-nav-links { display: flex; gap: 26px; align-items: center; }
+.x-nav-links a { color: var(--x-muted); text-decoration: none; font-size: 0.86rem; letter-spacing: 0.04em; transition: color 0.25s; }
+.x-nav-links a:hover { color: var(--x-cyan); }
+
+/* ---------- hero ---------- */
+
+.hero {
+  min-height: 100svh;
+  display: grid; place-items: center;
+  text-align: center;
+  padding: 120px clamp(20px, 5vw, 40px) 90px;
+}
+
+.hero-inner { max-width: 940px; }
+
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 0.72rem; letter-spacing: 0.34em; text-transform: uppercase;
+  color: var(--x-cyan); margin-bottom: 26px;
+  padding: 8px 18px; border-radius: 999px;
+  border: 1px solid rgba(53,214,255,0.28);
+  background: rgba(53,214,255,0.06);
+}
+.eyebrow::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--x-cyan); box-shadow: 0 0 10px var(--x-cyan);
+}
+
+.hero h1 {
+  font-family: var(--x-serif);
+  font-size: clamp(2.5rem, 8.2vw, 6.4rem);
+  line-height: 0.98;
+  margin: 0 0 24px;
+  letter-spacing: -0.015em;
+  color: #fff;
+  text-shadow: 0 0 62px rgba(109,77,246,0.4);
+}
+.hero h1 .accent {
+  background: linear-gradient(103deg, #fff 8%, var(--x-cyan) 48%, var(--x-violet) 92%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+.hero p.lede {
+  font-size: clamp(0.98rem, 1.9vw, 1.2rem);
+  color: var(--x-muted); max-width: 620px; margin: 0 auto 44px;
+  line-height: 1.65;
+}
+
+.cta-row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+.x-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 10px;
+  padding: 15px 32px; border-radius: 999px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 0.95rem; font-weight: 600;
+  text-decoration: none; letter-spacing: 0.01em;
+  transition: transform 0.3s cubic-bezier(.2,.8,.2,1), box-shadow 0.3s;
+}
+.x-btn:hover { transform: translateY(-2px); }
+
+.x-btn-primary {
+  color: #050a1a;
+  background: linear-gradient(103deg, var(--x-cyan), #8fa8ff 55%, var(--x-violet));
+  box-shadow: 0 8px 34px rgba(53,214,255,0.32);
+}
+.x-btn-primary:hover { box-shadow: 0 14px 44px rgba(53,214,255,0.46); }
+
+.x-btn-ghost {
+  color: var(--x-text);
+  background: var(--x-glass);
+  border: 1px solid var(--x-glass-line);
+  backdrop-filter: blur(16px);
+}
+.x-btn-ghost:hover { border-color: rgba(53,214,255,0.5); background: rgba(53,214,255,0.08); }
+
+/* ---------- stat strip ---------- */
+
+.hero-stats {
+  display: flex; gap: clamp(20px, 5vw, 62px); justify-content: center;
+  flex-wrap: wrap; margin-top: 70px;
+}
+.hero-stat { text-align: center; }
+.hero-stat b {
+  display: block; font-family: var(--x-serif); font-size: clamp(1.3rem, 3vw, 1.95rem);
+  color: #fff; letter-spacing: 0.01em;
+}
+.hero-stat span {
+  font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--x-muted);
+}
+
+/* ---------- scroll cue ---------- */
+
+.scroll-cue {
+  position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  color: var(--x-muted); font-size: 0.64rem; letter-spacing: 0.26em; text-transform: uppercase;
+}
+.scroll-cue i {
+  width: 1px; height: 46px;
+  background: linear-gradient(180deg, transparent, var(--x-cyan));
+  animation: cue 2.4s ease-in-out infinite;
+}
+@keyframes cue { 0%,100% { opacity: 0.25; transform: scaleY(0.55); } 50% { opacity: 1; transform: scaleY(1); } }
+
+/* ---------- WebGL fallback ---------- */
+
+.no-webgl #scene-canvas { display: none; }
+.no-webgl .atmosphere {
+  background:
+    radial-gradient(ellipse 75% 55% at 50% 38%, rgba(53,214,255,0.14), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 76% 26%, rgba(109,77,246,0.18), transparent 70%),
+    linear-gradient(180deg, #0b1430, #060a18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue i { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .x-nav-links { display: none; }
+  .hero-stats { gap: 24px; margin-top: 46px; }
+}

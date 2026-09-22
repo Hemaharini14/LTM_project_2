@@ -1041,6 +1041,65 @@ def create_database():
     )
 
     # ========================================================
+    # GEOCODE UNIVERSITIES
+    # ========================================================
+
+    # Resolved once here. Doing this join per request meant scanning
+    # 50,250 cities for every row, which took minutes to serve.
+
+    conn.execute("ALTER TABLE us_institutions ADD COLUMN latitude REAL")
+    conn.execute("ALTER TABLE us_institutions ADD COLUMN longitude REAL")
+    conn.execute("ALTER TABLE international_programs ADD COLUMN latitude REAL")
+    conn.execute("ALTER TABLE international_programs ADD COLUMN longitude REAL")
+
+    conn.execute("DROP TABLE IF EXISTS city_lookup")
+    conn.execute(
+        """
+        CREATE TABLE city_lookup AS
+        SELECT LOWER(city_name) AS city_key,
+               LOWER(country_name) AS country_key,
+               latitude, longitude
+        FROM (
+            SELECT city_name, country_name, latitude, longitude,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY LOWER(city_name), LOWER(country_name)
+                       ORDER BY COALESCE(population, 0) DESC
+                   ) AS rn
+            FROM cities
+            WHERE latitude IS NOT NULL
+        )
+        WHERE rn = 1
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_city_lookup "
+        "ON city_lookup(city_key, country_key)"
+    )
+
+    conn.execute(
+        """
+        UPDATE us_institutions SET
+          latitude = (SELECT latitude FROM city_lookup
+                      WHERE city_key = LOWER(us_institutions.city)
+                        AND country_key = 'united states'),
+          longitude = (SELECT longitude FROM city_lookup
+                       WHERE city_key = LOWER(us_institutions.city)
+                         AND country_key = 'united states')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE international_programs SET
+          latitude = (SELECT latitude FROM city_lookup
+                      WHERE city_key = LOWER(international_programs.city)
+                        AND country_key = LOWER(international_programs.country)),
+          longitude = (SELECT longitude FROM city_lookup
+                       WHERE city_key = LOWER(international_programs.city)
+                         AND country_key = LOWER(international_programs.country))
+        """
+    )
+
+    # ========================================================
     # FLAG DEGREE-GRANTING INSTITUTIONS
     # ========================================================
 
