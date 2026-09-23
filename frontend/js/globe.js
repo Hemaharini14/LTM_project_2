@@ -9,8 +9,9 @@ import * as THREE from "../vendor/three.module.js";
 
 const RADIUS = 5;
 
-const COLOR_OCEAN = 0x0b1733;
+const COLOR_OCEAN = 0x081228;
 const COLOR_GRID = 0x2f5590;
+const COLOR_COAST = 0x7ec8f5;
 const COLOR_CYAN = 0x35d6ff;
 const COLOR_GOLD = 0xe3b552;
 const COLOR_VIOLET = 0x6d4df6;
@@ -66,17 +67,60 @@ export function initGlobe(canvas, universities, onSelect) {
     oceanMaterial
   ));
 
+  // A faint graticule sits under the coastlines for depth.
   const gridMaterial = new THREE.MeshBasicMaterial({
     color: COLOR_GRID,
     wireframe: true,
     transparent: true,
-    opacity: 0.2
+    opacity: 0.075
   });
 
   world.add(new THREE.Mesh(
     new THREE.SphereGeometry(RADIUS, 36, 24),
     gridMaterial
   ));
+
+  /**
+   * Country outlines from Natural Earth, drawn as line segments just
+   * above the sphere. Every ring becomes a closed loop, and all of them
+   * share one geometry so the whole world is a single draw call.
+   */
+  function drawBorders(countries) {
+    const vertices = [];
+
+    countries.forEach(function (country) {
+      country.r.forEach(function (ring) {
+        for (let i = 0; i < ring.length; i++) {
+          const from = ring[i];
+          const to = ring[(i + 1) % ring.length];
+
+          const a = toVector(from[1], from[0], RADIUS + 0.012);
+          const b = toVector(to[1], to[0], RADIUS + 0.012);
+
+          vertices.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        }
+      });
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(vertices, 3)
+    );
+
+    world.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+      color: COLOR_COAST,
+      transparent: true,
+      opacity: 0.9
+    })));
+  }
+
+  fetch("data/borders.json")
+    .then(function (response) { return response.json(); })
+    .then(function (data) { drawBorders(data.countries); })
+    .catch(function () {
+      // The graticule alone still reads as a globe.
+    });
 
   const haloMaterial = new THREE.MeshBasicMaterial({
     color: COLOR_CYAN,
