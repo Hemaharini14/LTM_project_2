@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from src import auth
 from src.data_loader import load_cost_data, load_university_data
 from src.llm_extractor import extract_preferences
+from src.matching import score_rows
 from src.news import fetch_news
 from src.rag import answer_question
 from src.recommender import (
@@ -253,18 +254,32 @@ def get_recommendations(
 
     if request.country == "United States":
 
-        results, matched_fields = recommend_us_institutions(
+        results, scored_fields = recommend_us_institutions(
             field_of_study=request.field_of_study,
             fee_min=request.fee_min,
             fee_max=request.fee_max,
             sort=request.sort
         )
 
+        rows = records(results.head(30))
+
+        # Each row carries the fields it offers so the score can measure
+        # how close its own programmes are to what was asked for.
+        for row in rows:
+            row["matched_fields"] = (row.pop("all_fields", "") or "").replace(",", "|")
+
+        rows = score_rows(rows, {
+            "matched_distances": dict(scored_fields),
+            "fee_min": request.fee_min,
+            "fee_max": request.fee_max,
+            "country": request.country
+        })
+
         return {
             "source": "us_institutions",
             "fee_field_applied": True,
-            "matched_fields": matched_fields,
-            "results": records(results.head(30))
+            "matched_fields": [name for name, _ in scored_fields],
+            "results": rows
         }
 
     if request.country == "India":

@@ -103,6 +103,29 @@ def build_field_index():
 # SEMANTIC LOOKUP
 # ============================================================
 
+def find_matching_fields_scored(query, n_results=10):
+    """
+    Matching field names paired with their cosine distance, so callers
+    can turn closeness into a score rather than a yes/no.
+    """
+
+    if not query:
+        return []
+
+    response = get_collection().query(
+        query_embeddings=get_model().encode([query]).tolist(),
+        n_results=n_results
+    )
+
+    return [
+        (document, distance)
+        for document, distance in zip(
+            response["documents"][0], response["distances"][0]
+        )
+        if distance <= MAX_DISTANCE
+    ]
+
+
 def find_matching_fields(query, n_results=10):
     """
     Return the CIP field names closest in meaning to the student's

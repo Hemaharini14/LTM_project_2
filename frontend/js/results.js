@@ -49,8 +49,13 @@ function usCard(row) {
     ? `$${Math.round(row.tuition_out_state).toLocaleString()}/yr`
     : "Tuition not reported";
 
+  const match = row.match && row.match.overall;
+
   return `
     <a class="result-card" href="university.html?unitid=${row.unitid}">
+      ${match != null ? `<span class="match-score" title="${escapeHtml(
+        row.match.dimensions.map((d) => d.label + " " + d.score + "%").join(", ")
+      )}">${match}% match</span>` : ""}
       <h3>${escapeHtml(row.institution_name)}</h3>
       <p class="result-meta">${escapeHtml(row.city || "")}, ${escapeHtml(row.state || "")}</p>
       <div class="badge-row">

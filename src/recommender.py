@@ -1,7 +1,7 @@
 import pandas as pd
 
 from src.db import get_connection
-from src.vector_store import find_matching_fields
+from src.vector_store import find_matching_fields, find_matching_fields_scored
 
 
 def prepare_recommendations(university_df, cost_df):
@@ -235,7 +235,8 @@ def recommend_us_institutions(
     Returns (results, matched_fields).
     """
 
-    matched_fields = find_matching_fields(field_of_study)
+    scored_fields = find_matching_fields_scored(field_of_study)
+    matched_fields = [name for name, _ in scored_fields]
 
     if field_of_study and not matched_fields:
         return pd.DataFrame(), []
@@ -286,7 +287,14 @@ def recommend_us_institutions(
             i.control_label,
             i.tuition_in_state,
             i.tuition_out_state,
-            i.roomboard_on_campus
+            i.roomboard_on_campus,
+            i.median_earnings_10yr,
+            i.net_price_avg,
+            (
+                SELECT GROUP_CONCAT(DISTINCT f.cip_description)
+                FROM us_fields_of_study f
+                WHERE f.unitid = i.unitid
+            ) AS all_fields
         FROM us_institutions i
         WHERE {" AND ".join(conditions)}
         {order_clause}
@@ -298,7 +306,7 @@ def recommend_us_institutions(
 
     conn.close()
 
-    return result, matched_fields
+    return result, scored_fields
 
 
 def search_institutions(term, limit=20):

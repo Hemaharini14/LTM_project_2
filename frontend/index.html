@@ -183,8 +183,12 @@
     <h2 data-rise>Every score, broken down</h2>
     <p class="sub" data-rise>
       A match is never one number. Each dimension is scored on data we actually
-      hold, so you can see exactly why a university surfaced.
+      hold — semantic closeness of your field, how the price sits against your
+      budget, and where the university ranks among your options on outcomes and
+      cost after aid. Nothing here is a placeholder.
     </p>
+
+    <p class="hint" id="match-subject" style="margin:-24px 0 30px;"></p>
 
     <div class="match-grid">
       <div class="dial" data-rise>
@@ -455,6 +459,14 @@ function countTo(id, value) {
 })();
 
 // ---- recommendation cards (real universities) --------------------------
+// The landing has no signed-in student, so the preview scores a stated
+// example profile. The same engine scores a real one after sign-in.
+const SAMPLE_PROFILE = {
+  country: "United States",
+  field_of_study: "Computer Science",
+  fee_max: 60000
+};
+
 (async () => {
   const grid = document.getElementById("card-grid");
   if (!grid) return;
@@ -463,11 +475,7 @@ function countTo(id, value) {
     const response = await fetch("/api/recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        country: "United States",
-        field_of_study: "Computer Science",
-        fee_max: 60000
-      })
+      body: JSON.stringify(SAMPLE_PROFILE)
     });
 
     const data = await response.json();
@@ -478,13 +486,14 @@ function countTo(id, value) {
       return;
     }
 
-    grid.innerHTML = rows.map((row, index) => {
-      // Rank position stands in for a match score on this public preview;
-      // the real per-student score lives behind the preferences flow.
-      const indicative = 96 - index * 2;
+    grid.innerHTML = rows.map((row) => {
+      // Computed by the engine from this example profile, not invented.
+      const match = row.match && row.match.overall;
 
       return '<article class="glass-card">' +
-        '<span class="match-pill">' + indicative + "% INDICATIVE MATCH</span>" +
+        (match != null
+          ? '<span class="match-pill">' + match + "% MATCH</span>"
+          : "") +
         "<h3>" + escapeHtml(row.institution_name) + "</h3>" +
         '<p class="where">' + escapeHtml(row.city) + ", " + escapeHtml(row.state) +
           " &middot; United States</p>" +
@@ -504,15 +513,32 @@ function countTo(id, value) {
   }
 })();
 
-// ---- match dial --------------------------------------------------------
-initMatchDial([
-  { label: "Course match", score: 98 },
-  { label: "Budget match", score: 91 },
-  { label: "Country match", score: 96 },
-  { label: "Research match", score: 94 },
-  { label: "Academic match", score: 92 },
-  { label: "Lifestyle match", score: 87 }
-]);
+// ---- match dial: the real breakdown for the top example result -------
+(async () => {
+  try {
+    const response = await fetch("/api/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(SAMPLE_PROFILE)
+    });
+
+    const data = await response.json();
+    const top = (data.results || []).find((row) => row.match && row.match.dimensions.length);
+
+    if (!top) return;
+
+    initMatchDial(top.match.dimensions);
+
+    const note = document.getElementById("match-subject");
+    if (note) {
+      note.textContent =
+        top.institution_name + " scored against an example profile: " +
+        "Computer Science, United States, under $60,000.";
+    }
+  } catch (error) {
+    console.warn("match breakdown unavailable", error);
+  }
+})();
 </script>
 </body>
 </html>
