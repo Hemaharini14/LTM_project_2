@@ -72,9 +72,13 @@
       document.getElementById("pending").outerHTML =
         `<div class="msg msg-bot">${escapeHtml(result.answer)}</div>`;
 
-      sources.innerHTML = result.sources
-        .map((s, i) => `<p>[${i + 1}] ${escapeHtml(s.slice(0, 260))}…</p>`)
-        .join("");
+      sources.innerHTML =
+        (result.retrieval
+          ? `<p><strong>Answered via ${escapeHtml(result.retrieval)}.</strong></p>`
+          : "") +
+        result.sources
+          .map((s, i) => `<p>[${i + 1}] ${escapeHtml(s.slice(0, 260))}…</p>`)
+          .join("");
     } catch (error) {
       document.getElementById("pending").outerHTML =
         `<div class="msg msg-bot">${escapeHtml(error.message)}</div>`;

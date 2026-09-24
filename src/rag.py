@@ -5,6 +5,7 @@ from openai import OpenAI
 
 from src.db import get_connection
 from src.llm_extractor import FREE_MODELS, OPENROUTER_BASE_URL
+from src.query_router import structured_context
 from src.vector_store import CHROMA_DIR, get_model
 
 
@@ -382,9 +383,28 @@ def retrieve(question, n_results=RETRIEVE_COUNT):
 
 
 def answer_question(question):
-    """Retrieve real university records, then answer grounded in them."""
+    """
+    Retrieve real university records, then answer grounded in them.
 
-    context_documents = retrieve(question)
+    Rankings and counts come from SQL, because similarity search compares
+    meaning and cannot order by a number. Everything else uses the vector
+    index. Both paths produce the same kind of context.
+    """
+
+    routed = structured_context(question)
+
+    if routed is not None:
+        context_documents, basis = routed
+        retrieval_mode = f"database query ({basis})"
+
+        # A single named institution is thin context on its own, so add
+        # similar universities for comparison.
+        if len(context_documents) == 1:
+            context_documents = context_documents + retrieve(question, 4)
+            retrieval_mode += " plus semantic search"
+    else:
+        context_documents = retrieve(question)
+        retrieval_mode = "semantic search"
 
     if not context_documents:
         return {
@@ -434,7 +454,8 @@ def answer_question(question):
             if content:
                 return {
                     "answer": content.strip(),
-                    "sources": context_documents
+                    "sources": context_documents,
+                    "retrieval": retrieval_mode
                 }
 
             errors.append(f"{model}: empty response")
