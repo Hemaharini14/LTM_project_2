@@ -22,3 +22,4 @@ bcrypt
 itsdangerous
 feedparser
 praw
+pytest

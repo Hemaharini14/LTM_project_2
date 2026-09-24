@@ -187,6 +187,21 @@ Descriptive questions are unchanged at 20%, since both paths handle them
 the same way — that is the clearest target for future work, as location
 filters ("a selective university in Boston") are also partly structured.
 
+### Tests
+
+```bash
+pytest tests/ -q
+```
+
+55 tests covering query routing, match scoring, password hashing, sessions
+and country normalisation. They run in about 35 seconds and need no network
+or API key; account tests use a temporary database rather than the real one.
+
+Two are regression tests for bugs that reached committed code and were only
+found by the retrieval evaluation — "cheapest on-campus housing" ranking by
+tuition, and "highest graduate earnings" falling through to similarity
+search. Both are verified to fail if the bugs return.
+
 ---
 
 ## Tech stack
