@@ -162,6 +162,31 @@ them with Sentence Transformers into ChromaDB, retrieves the closest eight for
 a question, and passes them to a free OpenRouter model as grounding context.
 The system prompt forbids inventing a fee, ranking, test score or salary.
 
+### Retrieval evaluation
+
+`python -m src.evaluation` scores retrieval against 62 questions whose
+correct answer is computed from SQL beforehand, so nothing depends on
+judging prose. **Hit rate** is whether the right university appears in the
+retrieved context at all; **MRR** is where it ranked, with 1.00 meaning
+always first.
+
+| Question type | Vector only | Hybrid |
+|---|---|---|
+| Superlative ("best scholarships") | **0%** | **100%** |
+| Acronym lookup ("tell me about MIT") | 50% | **100%** |
+| Named lookup | 100% (MRR 0.90) | 100% (MRR **1.00**) |
+| Descriptive | 20% | 20% |
+| **Overall** | **73%** (MRR 0.62) | **87%** (MRR 0.84) |
+
+Superlatives failed completely under pure similarity search, because
+ranking by a number is not a similarity problem. Acronyms failed half the
+time, because "MIT" embeds nowhere near "Massachusetts Institute of
+Technology".
+
+Descriptive questions are unchanged at 20%, since both paths handle them
+the same way — that is the clearest target for future work, as location
+filters ("a selective university in Boston") are also partly structured.
+
 ---
 
 ## Tech stack

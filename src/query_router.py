@@ -15,12 +15,21 @@ from src.db import get_connection
 
 # Each intent maps to a column and a direction to sort it.
 SUPERLATIVES = [
+    # Housing is tested before tuition: "cheapest housing" also contains
+    # "cheapest", and whichever matches first decides the sort column.
+    (r"\b(cheapest|lowest|least expensive)\s+(on.?campus\s+)?"
+     r"(housing|accommodation|hostel|rent|room)\b",
+     "roomboard_on_campus", "ASC", "lowest on-campus housing cost"),
+
     (r"\b(cheap(est)?|least expensive|lowest (tuition|fee|cost)|most affordable|"
      r"lowest priced)\b", "tuition_out_state", "ASC", "lowest tuition"),
     (r"\b(most expensive|highest (tuition|fee|cost)|priciest)\b",
      "tuition_out_state", "DESC", "highest tuition"),
-    (r"\b(highest (paying|salary|earnings)|best (paid|salary|earnings|outcomes)|"
-     r"top earning|best return)\b",
+
+    # A word may sit between the superlative and the noun, as in
+    # "highest graduate earnings".
+    (r"\b(highest|best|top)\s+(\w+\s+)?"
+     r"(paying|salary|salaries|earnings|outcomes|return)\b",
      "median_earnings_10yr", "DESC", "highest graduate earnings"),
     (r"\b((most|best|good|top) (generous )?(scholarships?|aid|financial aid)|"
      r"most generous|lowest net price|cheapest after aid|"
