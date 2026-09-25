@@ -21,7 +21,7 @@ from the model's memory.
 | **3D globe explorer** | 840 real universities plotted at real coordinates, with country outlines |
 | **Ask EduBridge** | RAG chat over ~9,000 university documents |
 | **Entrance exams** | IELTS, TOEFL, PTE, GRE, GMAT, SAT, ACT and aptitude, linked to lessons |
-| **Accounts** | Signup/login with bcrypt-hashed passwords, per-user history, admin dashboard |
+| **Accounts** | Signup/login with bcrypt-hashed passwords, password reset by email, per-user history, admin dashboard |
 
 ---
 
@@ -125,11 +125,14 @@ api/main.py          FastAPI: auth, recommendations, RAG chat, globe, admin
 src/
   database_setup.py  Builds edubridge.db from the CSVs (run once)
   db.py              SQLite connections (WAL mode, busy timeout)
-  auth.py            bcrypt passwords, signed session cookies, history
+  auth.py            bcrypt passwords, signed sessions, password reset, history
+  mailer.py          Outbound email, falling back to the server console
   recommender.py     US / international / India matching and comparison
   matching.py        Match scoring across five measurable dimensions
   vector_store.py    ChromaDB index of field-of-study names
   rag.py             University document corpus, retrieval and answering
+  query_router.py    Sends ranking and lookup questions to SQL, not similarity
+  evaluation.py      Scores retrieval against SQL-derived correct answers
   llm_extractor.py   Résumé and free-text preference extraction
   resume_parser.py   PDF text extraction
   news.py            Education headlines from RSS
@@ -137,10 +140,33 @@ src/
 frontend/            Multi-page HTML/CSS/JS, no build step
   index.html         3D landing (Three.js, GSAP, Lenis)
   classic.html       Original book-opening landing
+  login.html         Sign in, create account, request a reset link
+  reset.html         Choose a new password from a reset link
   js/scene.js        Hero scene
   js/globe.js        Interactive globe with country borders
   vendor/            Three.js, GSAP, Lenis — vendored, no CDN needed
 ```
+
+### How accounts work
+
+Passwords are hashed with bcrypt and never stored or logged in the clear.
+A session is a signed cookie (`itsdangerous`) holding only a user id, so a
+tampered cookie fails its signature rather than impersonating anyone.
+
+Password reset follows the same rule as the rest of the app — nothing on
+screen that would let one student act as another:
+
+- The link carries 32 random bytes. Only a SHA-256 hash of it is stored, so
+  a leaked database yields no working links.
+- It can be spent once, expires after 30 minutes, and is voided by any newer
+  request for the same account.
+- The form answers identically for registered and unregistered addresses, so
+  it cannot be used to find out who has an account.
+- Resetting invalidates sessions issued before it. Otherwise a reset would
+  not actually remove whoever was already signed in.
+- The link is emailed when SMTP is configured and printed to the server
+  console otherwise. It is never returned to the browser: showing it there
+  would let anyone reset any account by typing that address.
 
 ### How matching works
 
@@ -200,14 +226,24 @@ filters ("a selective university in Boston") are also partly structured.
 pytest tests/ -q
 ```
 
-55 tests covering query routing, match scoring, password hashing, sessions
-and country normalisation. They run in about 35 seconds and need no network
-or API key; account tests use a temporary database rather than the real one.
+65 tests — 21 on query routing, 13 on match scoring, 31 on accounts,
+passwords, sessions and password reset. They run in about 40 seconds and
+need no network or API key; account tests use a temporary database rather
+than the real one.
 
-Two are regression tests for bugs that reached committed code and were only
-found by the retrieval evaluation — "cheapest on-campus housing" ranking by
-tuition, and "highest graduate earnings" falling through to similarity
-search. Both are verified to fail if the bugs return.
+Three cover bugs that the tests themselves caught, and each is verified to
+fail if the bug returns:
+
+- **"cheapest on-campus housing" ranked by tuition** — the generic
+  "cheapest" pattern matched before the housing one. Found by the retrieval
+  evaluation, after it had already been committed.
+- **"highest graduate earnings" fell through to similarity search** and
+  answered with a UK university. Same origin.
+- **A reset locked you out of your own new sessions.** `password_changed_at`
+  was written in local time but compared against session timestamps, which
+  `itsdangerous` records in UTC. Every session created after a reset looked
+  older than the reset, so the account stayed unusable for the length of the
+  local UTC offset — 5 hours 30 minutes here.
 
 ---
 
@@ -225,6 +261,11 @@ Three.js · GSAP · Lenis · vanilla HTML/CSS/JS
 the window open. Check the port is `8000` and the URL is `http://`, not `https`.
 
 **"database is locked"** — more than one server is running. Stop the extras.
+
+**No reset email arrived** — expected unless `SMTP_HOST`, `SMTP_USER` and
+`SMTP_PASSWORD` are set in `.env`. Without them the link is printed in the
+terminal running the server. With Gmail, `SMTP_PASSWORD` must be an App
+Password; the account password will be refused.
 
 **Model downloads fail behind a corporate proxy** — the embedding model is
 fetched from Hugging Face via `requests`, which uses `certifi` rather than the
