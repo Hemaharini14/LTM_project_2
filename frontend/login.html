@@ -42,24 +42,6 @@
         </div>
         <p class="error-text" id="login-error" hidden></p>
         <button class="btn btn-primary btn-block" type="submit">Sign in</button>
-        <p class="hint" style="text-align:center;margin-top:14px;">
-          <a href="#" id="forgot-link">Forgot your password?</a>
-        </p>
-      </form>
-
-      <form id="forgot-form" hidden>
-        <p class="hint">Enter your email and we will send you a link to choose
-          a new password. The link expires in 30 minutes.</p>
-        <div class="field">
-          <label for="forgot-email">Email</label>
-          <input type="email" id="forgot-email" required autocomplete="email">
-        </div>
-        <p class="error-text" id="forgot-error" hidden></p>
-        <p class="hint" id="forgot-sent" hidden></p>
-        <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
-        <p class="hint" style="text-align:center;margin-top:14px;">
-          <a href="#" id="back-to-login">Back to sign in</a>
-        </p>
       </form>
     </div>
 
@@ -95,11 +77,6 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("is-active"));
     btn.classList.add("is-active");
     document.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`).classList.add("is-active");
-
-    // Coming back to this tab should show the sign-in form, not a
-    // forgot-password panel left open from earlier.
-    document.getElementById("login-form").hidden = false;
-    document.getElementById("forgot-form").hidden = true;
   });
 });
 
@@ -108,49 +85,6 @@ function showError(id, message) {
   el.textContent = message;
   el.hidden = false;
 }
-
-// --- forgot password ---------------------------------------------------
-const loginForm = document.getElementById("login-form");
-const forgotForm = document.getElementById("forgot-form");
-
-document.getElementById("forgot-link").addEventListener("click", (event) => {
-  event.preventDefault();
-  loginForm.hidden = true;
-  forgotForm.hidden = false;
-});
-
-document.getElementById("back-to-login").addEventListener("click", (event) => {
-  event.preventDefault();
-  forgotForm.hidden = true;
-  loginForm.hidden = false;
-});
-
-forgotForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  document.getElementById("forgot-error").hidden = true;
-
-  const button = event.target.querySelector("button[type=submit]");
-  setBusy(button, true, "Sending…");
-
-  try {
-    const result = await api("/api/auth/forgot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: document.getElementById("forgot-email").value })
-    });
-
-    const sent = document.getElementById("forgot-sent");
-    sent.textContent = result.delivered_by_email
-      ? result.message
-      : result.message + " Email is not configured on this server, so the " +
-        "link has been printed in the server console instead.";
-    sent.hidden = false;
-  } catch (error) {
-    showError("forgot-error", error.message);
-  } finally {
-    setBusy(button, false);
-  }
-});
 
 document.getElementById("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
