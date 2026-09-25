@@ -87,7 +87,14 @@ OPENROUTER_API_KEY=     # https://openrouter.ai/keys — free models only
 SESSION_SECRET=         # python -c "import secrets; print(secrets.token_urlsafe(48))"
 REDDIT_CLIENT_ID=       # optional, enables live student reviews
 REDDIT_CLIENT_SECRET=
+SMTP_HOST=              # optional, emails password-reset links
+SMTP_USER=
+SMTP_PASSWORD=
 ```
+
+Without the SMTP settings the password-reset link is printed to the
+server console instead of being emailed. The link is never shown in the
+browser: anyone who could read it there could take over the account.
 
 ### 3. Build the database and search indexes
 

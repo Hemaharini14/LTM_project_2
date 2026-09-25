@@ -1,10 +1,13 @@
+import hashlib
 import os
+import secrets
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from src import mailer
 from src.db import get_connection
 
 
@@ -55,6 +58,29 @@ def init_auth_tables():
         )
         """
     )
+
+    # Reset tokens are stored hashed, so a leaked database cannot be used
+    # to seize accounts. They expire and can only be spent once.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_resets (
+            reset_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL,
+
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+        """
+    )
+
+    # Added after the fact, so existing databases need the column.
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(users)")]
+
+    if "password_changed_at" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN password_changed_at TEXT")
 
     conn.execute(
         """
@@ -195,12 +221,184 @@ def create_session_token(user_id: int) -> str:
 
 def read_session_token(token: str):
     try:
-        data = get_serializer().loads(token, max_age=SESSION_MAX_AGE)
+        data, issued_at = get_serializer().loads(
+            token, max_age=SESSION_MAX_AGE, return_timestamp=True
+        )
 
     except (BadSignature, SignatureExpired):
         return None
 
-    return get_user(data["user_id"])
+    user = get_user(data["user_id"])
+
+    if user is None:
+        return None
+
+    # A password reset has to evict whoever was already signed in,
+    # otherwise resetting does not actually lock an intruder out.
+    changed_at = password_changed_at(user["user_id"])
+
+    if changed_at is not None and as_utc(issued_at) < changed_at:
+        return None
+
+    return user
+
+
+def password_changed_at(user_id):
+    conn = get_connection()
+
+    row = conn.execute(
+        "SELECT password_changed_at FROM users WHERE user_id = ?", (user_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if row is None or row["password_changed_at"] is None:
+        return None
+
+    return as_utc(datetime.fromisoformat(row["password_changed_at"]))
+
+
+def as_utc(stamp):
+    """
+    Session timestamps come from itsdangerous in UTC, so anything
+    compared against them has to be in UTC too. Storing this one in
+    local time made every session issued after a reset look older than
+    the reset, which signed the account out of its own new sessions.
+    """
+
+    if stamp.tzinfo is None:
+        return stamp.replace(tzinfo=timezone.utc)
+
+    return stamp.astimezone(timezone.utc)
+
+
+# ============================================================
+# PASSWORD RESET
+# ============================================================
+
+RESET_TOKEN_TTL_MINUTES = 30
+
+
+def hash_reset_token(token):
+    """
+    SHA-256 rather than bcrypt: the token is 32 random bytes, so it needs
+    no stretching, and the hash has to be looked up directly.
+    """
+
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def request_password_reset(email, build_link):
+    """
+    Issues a reset link for a real account and delivers it by email.
+
+    Returns the same value whether or not the address is registered, so
+    this cannot be used to discover who has an account. The token is
+    never returned to the caller — only mailed.
+    """
+
+    email = email.strip().lower()
+
+    conn = get_connection()
+
+    row = conn.execute(
+        "SELECT user_id FROM users WHERE email = ?", (email,)
+    ).fetchone()
+
+    if row is None:
+        conn.close()
+        return False
+
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+
+    # Any earlier request is void once a new one is made.
+    conn.execute(
+        "UPDATE password_resets SET used_at = ? "
+        "WHERE user_id = ? AND used_at IS NULL",
+        (datetime.now().isoformat(timespec="seconds"), row["user_id"])
+    )
+
+    conn.execute(
+        """
+        INSERT INTO password_resets (
+            user_id, token_hash, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            row["user_id"],
+            hash_reset_token(token),
+            expires.isoformat(timespec="seconds"),
+            datetime.now().isoformat(timespec="seconds")
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    mailer.send(
+        email,
+        "Reset your EduBridge password",
+        "Someone asked to reset the password for this EduBridge account.\n\n"
+        f"Open this link within {RESET_TOKEN_TTL_MINUTES} minutes to choose "
+        f"a new one:\n\n    {build_link(token)}\n\n"
+        "The link works once. If this was not you, ignore this message — "
+        "your password has not changed."
+    )
+
+    return True
+
+
+def reset_password(token, new_password):
+    """
+    Spends a reset token and sets a new password.
+
+    Raises ValueError when the token is unknown, expired or already used,
+    or when the new password fails validation.
+    """
+
+    validate_password(new_password)
+
+    conn = get_connection()
+
+    row = conn.execute(
+        """
+        SELECT reset_id, user_id, expires_at, used_at
+        FROM password_resets WHERE token_hash = ?
+        """,
+        (hash_reset_token(token),)
+    ).fetchone()
+
+    if row is None or row["used_at"] is not None:
+        conn.close()
+        raise ValueError("That reset link is no longer valid.")
+
+    if datetime.fromisoformat(row["expires_at"]) < datetime.now():
+        conn.close()
+        raise ValueError("That reset link has expired. Request a new one.")
+
+    now = datetime.now().isoformat(timespec="seconds")
+
+    conn.execute(
+        "UPDATE users SET password_hash = ?, password_changed_at = ? "
+        "WHERE user_id = ?",
+        (
+            hash_password(new_password),
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            row["user_id"]
+        )
+    )
+
+    conn.execute(
+        "UPDATE password_resets SET used_at = ? WHERE reset_id = ?",
+        (now, row["reset_id"])
+    )
+
+    conn.commit()
+    conn.close()
+
+    return True
 
 
 # ============================================================

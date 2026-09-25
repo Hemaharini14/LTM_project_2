@@ -6,6 +6,7 @@ from fastapi import (
     FastAPI,
     File,
     HTTPException,
+    Request,
     Response,
     UploadFile
 )
@@ -13,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src import auth
+from src import auth, mailer
 from src.data_loader import load_cost_data, load_university_data
 from src.llm_extractor import extract_preferences
 from src.matching import score_rows
@@ -83,6 +84,15 @@ class LoginRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
 
 
 # ============================================================
@@ -156,6 +166,47 @@ def login(request: LoginRequest, response: Response):
 
 @app.post("/api/auth/logout")
 def logout(response: Response):
+    response.delete_cookie(auth.SESSION_COOKIE)
+
+    return {"ok": True}
+
+
+@app.post("/api/auth/forgot")
+def forgot_password(request: ForgotPasswordRequest, http_request: Request):
+    """
+    Starts a password reset.
+
+    Always reports success, whether or not the address is registered —
+    a different answer would let anyone test which emails have accounts.
+    The link is only ever emailed, never returned here.
+    """
+
+    base = str(http_request.base_url).rstrip("/")
+
+    auth.request_password_reset(
+        request.email,
+        lambda token: f"{base}/reset.html?token={token}"
+    )
+
+    return {
+        "ok": True,
+        "message": (
+            "If that email has an account, a reset link is on its way. "
+            "The link expires in 30 minutes."
+        ),
+        "delivered_by_email": mailer.smtp_configured()
+    }
+
+
+@app.post("/api/auth/reset")
+def reset_password(request: ResetPasswordRequest, response: Response):
+    try:
+        auth.reset_password(request.token, request.password)
+
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    # Existing sessions are already void; clear this browser's too.
     response.delete_cookie(auth.SESSION_COOKIE)
 
     return {"ok": True}
