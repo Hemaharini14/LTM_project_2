@@ -10,6 +10,8 @@ import pytest
 
 from src.query_router import (
     detect_superlative,
+    extract_location,
+    is_general_knowledge_question,
     named_institution,
     parse_budget,
     wants_structured_answer,
@@ -76,6 +78,29 @@ def test_acronym_needs_word_boundary():
         "Massachusetts Institute of Technology"
 
 
+# --- locations ----------------------------------------------------------
+
+def test_location_with_state_resolves():
+    assert extract_location("a selective university in Cambridge, MA") == \
+        ("Cambridge", "MA")
+
+
+def test_location_city_only_resolves():
+    city, _ = extract_location("a good university in Chicago")
+    assert city == "Chicago"
+
+
+def test_location_nonsense_returns_none():
+    """The regex alone would capture "computer science" here; the
+    database lookup is what rejects it as not a real place."""
+
+    assert extract_location("universities strong in computer science") is None
+
+
+def test_no_location_mentioned_returns_none():
+    assert extract_location("which universities are cheapest") is None
+
+
 # --- regressions ------------------------------------------------------
 
 def test_housing_superlative_beats_generic_cheapest():
@@ -102,3 +127,18 @@ def test_superlative_tolerates_a_word_before_the_noun():
 
     assert column == "median_earnings_10yr"
     assert direction == "DESC"
+
+
+def test_location_question_is_not_general_knowledge():
+    """
+    Regression: adding general-knowledge detection made "what's a good
+    university in Chicago" match the broad "what is a/the X" pattern and
+    get answered from the model's own knowledge instead of real
+    per-university data, even though Chicago is a real place this app
+    has institutions for.
+    """
+
+    assert not is_general_knowledge_question("What's a good university in Chicago?")
+    assert not is_general_knowledge_question(
+        "Tell me about a selective university in Cambridge, MA."
+    )

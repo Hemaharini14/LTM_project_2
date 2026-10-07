@@ -5,6 +5,7 @@ const NAV_LINKS = [
   ["compare.html", "Compare"],
   ["chat.html", "Ask AI"],
   ["exams.html", "Exams"],
+  ["saved.html", "Saved"],
   ["history.html", "History"]
 ];
 
@@ -88,6 +89,40 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+/**
+ * Renders the light Markdown a free LLM tends to produce (**bold**,
+ * "- " bullet lists, blank-line paragraphs) as HTML. Escapes first, so
+ * nothing in the model's own text can inject real markup — only the
+ * "**...**" / "- " patterns this function itself adds become tags.
+ */
+function renderMarkdown(text) {
+  const escaped = escapeHtml(text ?? "").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  const blocks = [];
+  let listItems = null;
+
+  for (const rawLine of escaped.split("\n")) {
+    const line = rawLine.trim();
+    const bullet = line.match(/^[-*]\s+(.*)/);
+
+    if (bullet) {
+      if (!listItems) { listItems = []; blocks.push(listItems); }
+      listItems.push(bullet[1]);
+    } else {
+      listItems = null;
+      if (line) blocks.push(line);
+    }
+  }
+
+  return blocks
+    .map((block) =>
+      Array.isArray(block)
+        ? `<ul>${block.map((item) => `<li>${item}</li>`).join("")}</ul>`
+        : `<p>${block}</p>`
+    )
+    .join("");
+}
+
 function money(value) {
   return value === null || value === undefined
     ? "Not reported"
@@ -104,6 +139,74 @@ function plain(value) {
   return value === null || value === undefined || value === ""
     ? "Not reported"
     : value;
+}
+
+/** Small compare affordance shared by every card type and the saved list. */
+function compareLink(key) {
+  return `<a class="compare-link" href="compare.html?a=${encodeURIComponent(key)}"
+     onclick="event.stopPropagation()">Compare ⇄</a>`;
+}
+
+let savedKeysCache = null;
+
+/** The signed-in student's saved-university keys, fetched once and
+    cached for the page — avoids one request per card to know whether
+    its star should start filled. */
+async function getSavedKeys() {
+  if (savedKeysCache) return savedKeysCache;
+
+  try {
+    const data = await api("/api/saved");
+    savedKeysCache = new Set(data.saved.map((s) => s.key));
+  } catch {
+    savedKeysCache = new Set();
+  }
+
+  return savedKeysCache;
+}
+
+/** Toggles a university's saved state. Expects the button to carry a
+    URI-encoded compare key ("us:166683", "india:...") in data-key. */
+async function toggleSave(button) {
+  const key = decodeURIComponent(button.dataset.key);
+  const keys = await getSavedKeys();
+  const isSaved = keys.has(key);
+
+  button.disabled = true;
+
+  try {
+    await api(isSaved ? "/api/saved/remove" : "/api/saved", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key })
+    });
+
+    if (isSaved) {
+      keys.delete(key);
+      button.textContent = "☆ Save";
+      button.classList.remove("is-saved");
+    } else {
+      keys.add(key);
+      button.textContent = "★ Saved";
+      button.classList.add("is-saved");
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/** Save-toggle button markup, shared by every card type and the
+    university detail page. */
+function saveButton(key, savedKeys) {
+  const isSaved = (savedKeys || new Set()).has(key);
+
+  return `<button type="button" class="save-link${isSaved ? " is-saved" : ""}"
+    data-key="${encodeURIComponent(key)}"
+    onclick="event.preventDefault(); event.stopPropagation(); toggleSave(this);">${
+      isSaved ? "★ Saved" : "☆ Save"
+    }</button>`;
 }
 
 function setBusy(button, busy, busyLabel) {
@@ -153,7 +256,7 @@ function mountBot() {
         body: JSON.stringify({ question })
       });
       document.getElementById("bot-pending").outerHTML =
-        `<div class="msg msg-bot">${escapeHtml(result.answer)}</div>`;
+        `<div class="msg msg-bot">${renderMarkdown(result.answer)}</div>`;
     } catch (error) {
       document.getElementById("bot-pending").outerHTML =
         `<div class="msg msg-bot">${escapeHtml(error.message)}</div>`;

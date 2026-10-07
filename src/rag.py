@@ -5,7 +5,7 @@ from openai import OpenAI
 
 from src.db import get_connection
 from src.llm_extractor import FREE_MODELS, OPENROUTER_BASE_URL
-from src.query_router import structured_context
+from src.query_router import is_general_knowledge_question, structured_context
 from src.vector_store import CHROMA_DIR, get_model
 
 
@@ -47,64 +47,84 @@ def money(value):
     return f"${value:,.0f}" if value is not None else "not reported"
 
 
+US_DOCUMENT_QUERY = """
+    SELECT i.*, (
+        SELECT GROUP_CONCAT(DISTINCT f.cip_description)
+        FROM (
+            SELECT cip_description
+            FROM us_fields_of_study
+            WHERE unitid = i.unitid
+            LIMIT 25
+        ) f
+    ) AS fields
+    FROM us_institutions i
+"""
+
+
+def _document_for_us_row(row):
+    """Plain-language document for one US institution row.
+
+    Shared by the bulk corpus builder and the single-institution lookup
+    used to explain a recommendation, so both describe a university the
+    same way.
+    """
+
+    admission = (
+        f"{row['admission_rate']:.0%}"
+        if row["admission_rate"] is not None
+        else "not reported"
+    )
+
+    act = (
+        f"{row['act_25th']:.0f}-{row['act_75th']:.0f}"
+        if row["act_25th"] is not None and row["act_75th"] is not None
+        else "not reported"
+    )
+
+    fields = (row["fields"] or "").replace(",", ", ")
+
+    return (
+        f"{row['institution_name']} is a {row['control_label'] or 'US'} "
+        f"university in {row['city']}, {row['state']}, United States. "
+        f"Out-of-state tuition is {money(row['tuition_out_state'])} per year "
+        f"and in-state tuition is {money(row['tuition_in_state'])}. "
+        f"Total cost of attendance is {money(row['cost_of_attendance'])}. "
+        f"On-campus room and board (hostel) costs "
+        f"{money(row['roomboard_on_campus'])} and off-campus housing costs "
+        f"{money(row['roomboard_off_campus'])}. "
+        f"Admission rate is {admission}. "
+        f"Average SAT is "
+        f"{row['sat_average'] or 'not reported'} and ACT range is {act}. "
+        f"Median earnings 10 years after entry are "
+        f"{money(row['median_earnings_10yr'])}. "
+        f"{aid_sentence(row)}"
+        f"Fields of study offered include: {fields}."
+    )
+
+
 def build_us_documents(conn):
     """One plain-language document per US institution."""
 
-    rows = conn.execute(
-        """
-        SELECT i.*, (
-            SELECT GROUP_CONCAT(DISTINCT f.cip_description)
-            FROM (
-                SELECT cip_description
-                FROM us_fields_of_study
-                WHERE unitid = i.unitid
-                LIMIT 25
-            ) f
-        ) AS fields
-        FROM us_institutions i
-        """
-    ).fetchall()
+    rows = conn.execute(US_DOCUMENT_QUERY).fetchall()
 
-    documents = []
-    ids = []
-
-    for row in rows:
-
-        admission = (
-            f"{row['admission_rate']:.0%}"
-            if row["admission_rate"] is not None
-            else "not reported"
-        )
-
-        act = (
-            f"{row['act_25th']:.0f}-{row['act_75th']:.0f}"
-            if row["act_25th"] is not None and row["act_75th"] is not None
-            else "not reported"
-        )
-
-        fields = (row["fields"] or "").replace(",", ", ")
-
-        documents.append(
-            f"{row['institution_name']} is a {row['control_label'] or 'US'} "
-            f"university in {row['city']}, {row['state']}, United States. "
-            f"Out-of-state tuition is {money(row['tuition_out_state'])} per year "
-            f"and in-state tuition is {money(row['tuition_in_state'])}. "
-            f"Total cost of attendance is {money(row['cost_of_attendance'])}. "
-            f"On-campus room and board (hostel) costs "
-            f"{money(row['roomboard_on_campus'])} and off-campus housing costs "
-            f"{money(row['roomboard_off_campus'])}. "
-            f"Admission rate is {admission}. "
-            f"Average SAT is "
-            f"{row['sat_average'] or 'not reported'} and ACT range is {act}. "
-            f"Median earnings 10 years after entry are "
-            f"{money(row['median_earnings_10yr'])}. "
-            f"{aid_sentence(row)}"
-            f"Fields of study offered include: {fields}."
-        )
-
-        ids.append(f"us_{row['unitid']}")
+    documents = [_document_for_us_row(row) for row in rows]
+    ids = [f"us_{row['unitid']}" for row in rows]
 
     return ids, documents
+
+
+def document_for_us_institution(unitid):
+    """The same grounded document a single US institution gets in the
+    RAG corpus, fetched on demand by unitid — used to explain one
+    recommendation without rebuilding or re-embedding the whole corpus."""
+
+    conn = get_connection()
+    row = conn.execute(
+        f"{US_DOCUMENT_QUERY} WHERE i.unitid = ?", (unitid,)
+    ).fetchone()
+    conn.close()
+
+    return _document_for_us_row(row) if row is not None else None
 
 
 def aid_sentence(row):
@@ -382,6 +402,76 @@ def retrieve(question, n_results=RETRIEVE_COUNT):
     return response["documents"][0]
 
 
+def _complete_with_fallback(system_prompt, user_prompt):
+    """
+    Sends one chat completion, trying each free model in turn.
+
+    Shared by question-answering and match explanation, since both are
+    "ground a short answer in the context given" calls that differ only
+    in their prompts.
+    """
+
+    api_key = os.getenv("OPENROUTER_API_KEY")
+
+    if not api_key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY is not set. Add it to your .env file "
+            "(see .env.example)."
+        )
+
+    # Free OpenRouter models occasionally hang instead of erroring, and the
+    # SDK's default timeout is ~10 minutes — long enough that a hung model
+    # would block the whole request with no feedback and never reach the
+    # fallback below. A short timeout makes a stuck model fail fast instead.
+    client = OpenAI(
+        api_key=api_key,
+        base_url=OPENROUTER_BASE_URL,
+        timeout=20.0,
+        max_retries=1,
+    )
+
+    errors = []
+
+    for model in FREE_MODELS:
+
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+
+            content = completion.choices[0].message.content
+
+            if content:
+                return content.strip()
+
+            errors.append(f"{model}: empty response")
+
+        except Exception as error:
+            errors.append(f"{model}: {type(error).__name__}")
+
+    raise RuntimeError(
+        "All free OpenRouter models failed or are rate-limited. "
+        + "; ".join(errors)
+    )
+
+
+GENERAL_KNOWLEDGE_SYSTEM_PROMPT = (
+    "You are EduBridge, helping a student with a general question about "
+    "academic fields, degrees, exams, or named scholarships/programs "
+    "(e.g. Chevening, Fulbright, GRE) that are not tied to any one "
+    "university in this app's records. Answer from your own knowledge, "
+    "in 2-4 sentences. Do not state a specific fee, ranking, admission "
+    "rate or salary for any university — you were not given that data "
+    "here, so making one up would be a guess. If the student seems to "
+    "want university recommendations or figures, say so plainly and "
+    "suggest they search or ask about a named university instead."
+)
+
+
 def answer_question(question):
     """
     Retrieve real university records, then answer grounded in them.
@@ -389,7 +479,21 @@ def answer_question(question):
     Rankings and counts come from SQL, because similarity search compares
     meaning and cannot order by a number. Everything else uses the vector
     index. Both paths produce the same kind of context.
+
+    A general question — how fields of study relate, or what a named
+    scholarship/exam is — has no answer in a corpus of per-university
+    records, so it skips retrieval entirely rather than getting
+    "grounded" in whatever documents happened to embed nearby.
     """
+
+    if is_general_knowledge_question(question):
+        content = _complete_with_fallback(GENERAL_KNOWLEDGE_SYSTEM_PROMPT, question)
+
+        return {
+            "answer": content,
+            "sources": [],
+            "retrieval": "general knowledge, not EduBridge's data"
+        }
 
     routed = structured_context(question)
 
@@ -415,58 +519,155 @@ def answer_question(question):
             "sources": []
         }
 
-    api_key = os.getenv("OPENROUTER_API_KEY")
-
-    if not api_key:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY is not set. Add it to your .env file "
-            "(see .env.example)."
-        )
-
     context = "\n\n".join(
         f"[{index + 1}] {document}"
         for index, document in enumerate(context_documents)
     )
 
-    client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
-
-    errors = []
-
-    for model in FREE_MODELS:
-
-        try:
-            completion = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Context:\n{context}\n\n"
-                            f"Question: {question}"
-                        )
-                    }
-                ]
-            )
-
-            content = completion.choices[0].message.content
-
-            if content:
-                return {
-                    "answer": content.strip(),
-                    "sources": context_documents,
-                    "retrieval": retrieval_mode
-                }
-
-            errors.append(f"{model}: empty response")
-
-        except Exception as error:
-            errors.append(f"{model}: {type(error).__name__}")
-
-    raise RuntimeError(
-        "All free OpenRouter models failed or are rate-limited. "
-        + "; ".join(errors)
+    content = _complete_with_fallback(
+        SYSTEM_PROMPT,
+        f"Context:\n{context}\n\nQuestion: {question}"
     )
+
+    return {
+        "answer": content,
+        "sources": context_documents,
+        "retrieval": retrieval_mode
+    }
+
+
+EXPLAIN_SYSTEM_PROMPT = (
+    "You are EduBridge, explaining why one specific university was "
+    "recommended to a student. Use ONLY the real figures in the "
+    "university record below — name the actual numbers that make it a "
+    "strong or imperfect fit. Write 2-3 sentences, direct and specific. "
+    "Never invent a fee, ranking, test score or salary, and never "
+    "mention a field, cost or detail the record does not contain. "
+    "When judging whether the price fits the student's stated budget, "
+    "compare the budget against tuition specifically, not total cost of "
+    "attendance or housing — tuition is what this app's own budget-fit "
+    "score is measured against, and the explanation must agree with it."
+)
+
+
+def _describe_preferences(preferences):
+    """Student preferences, worded for a prompt. Shared by every RAG call
+    that explains or summarizes recommendations against them."""
+
+    wants = []
+
+    if preferences.get("field_of_study"):
+        wants.append(f"field of study: {preferences['field_of_study']}")
+
+    fee_min = preferences.get("fee_min")
+    fee_max = preferences.get("fee_max")
+
+    if fee_min is not None and fee_max is not None:
+        wants.append(
+            f"annual tuition budget: ${fee_min:,.0f}-${fee_max:,.0f}"
+        )
+    elif fee_max is not None:
+        wants.append(f"annual tuition budget: up to ${fee_max:,.0f}")
+    elif fee_min is not None:
+        wants.append(f"annual tuition budget: at least ${fee_min:,.0f}")
+
+    if preferences.get("country"):
+        wants.append(f"country: {preferences['country']}")
+
+    return "; ".join(wants) or "no specific preferences stated"
+
+
+def explain_match(unitid, preferences):
+    """
+    A short, grounded explanation of why one recommended university does
+    or doesn't fit what the student asked for.
+
+    Reuses the exact document a chat answer would be grounded in, so the
+    explanation can never contradict the figures shown elsewhere in the
+    app — it just cites them for this one university instead of ranking
+    across all of them.
+    """
+
+    document = document_for_us_institution(unitid)
+
+    if document is None:
+        return None
+
+    user_prompt = (
+        f"University record:\n{document}\n\n"
+        f"What the student asked for: {_describe_preferences(preferences)}\n\n"
+        "Explain why this university is or isn't a strong match."
+    )
+
+    return _complete_with_fallback(EXPLAIN_SYSTEM_PROMPT, user_prompt)
+
+
+SUMMARY_SYSTEM_PROMPT = (
+    "You are EduBridge, summarizing a student's search results in one "
+    "short paragraph. You are given their stated preferences and their "
+    "top-matched universities, each with the real tuition and match "
+    "score this app already computed for it. Write 3-5 sentences: what "
+    "the shortlist has in common, which look like the strongest fits "
+    "and why, and any real tradeoff worth flagging (e.g. a close match "
+    "that's over budget). Use ONLY the figures given — never invent a "
+    "fee, ranking or score, and never mention a university that is not "
+    "in the list below."
+)
+
+
+def summarize_recommendations(rows, preferences, limit=8):
+    """
+    One grounded paragraph summarizing a student's top-matched
+    universities.
+
+    A single LLM call over the match data the app already computed and
+    already shows on the cards — not a fresh retrieval — so the summary
+    can never show a figure that disagrees with what's on screen.
+    """
+
+    top = [row for row in rows if row.get("institution_name")][:limit]
+
+    if not top:
+        return None
+
+    lines = []
+
+    for index, row in enumerate(top, start=1):
+        tuition = row.get("tuition_out_state")
+        tuition_text = (
+            f"${tuition:,.0f}/yr" if tuition is not None
+            else "tuition not reported"
+        )
+
+        match = row.get("match") or {}
+        overall = match.get("overall")
+        match_text = (
+            f"{overall}% overall match" if overall is not None
+            else "unscored"
+        )
+
+        dimensions = match.get("dimensions") or []
+        dimension_text = ", ".join(
+            f"{d['label']} {d['score']}%" for d in dimensions
+        )
+
+        location = ", ".join(
+            part for part in (row.get("city"), row.get("state")) if part
+        )
+
+        lines.append(
+            f"{index}. {row['institution_name']}"
+            + (f" ({location})" if location else "")
+            + f" — {tuition_text}, {match_text}"
+            + (f" [{dimension_text}]" if dimension_text else "")
+        )
+
+    user_prompt = (
+        f"What the student asked for: {_describe_preferences(preferences)}\n\n"
+        "Top matches:\n" + "\n".join(lines)
+    )
+
+    return _complete_with_fallback(SUMMARY_SYSTEM_PROMPT, user_prompt)
 
 
 # ============================================================

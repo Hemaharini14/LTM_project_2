@@ -53,6 +53,126 @@ COUNT_PATTERN = re.compile(
     r"\bhow many\b", re.IGNORECASE
 )
 
+# A city mentioned near the end of a question ("...in Boston, MA") is an
+# exact filter, the same way a named institution or a ranking is — pure
+# vector similarity struggles with it for the same reason it struggles
+# with rankings: a specific place name doesn't reliably stand out in an
+# embedding the way it does as a literal database match.
+LOCATION_PATTERN = re.compile(
+    r"\bin\s+([A-Za-z][A-Za-z\s.'-]*?)(?:,\s*([A-Za-z]{2,}))?\s*[.?]?\s*$"
+)
+
+
+def extract_location(question):
+    """
+    (city, state) the question names, matched against real institution
+    locations — or None if nothing in the question matches a real one.
+
+    The regex alone is loose (it would just as happily capture "computer
+    science" out of "...strong in computer science"), so whatever it
+    captures is validated against the database before being trusted;
+    gibberish simply matches no row and this returns None.
+    """
+
+    match = LOCATION_PATTERN.search(question)
+
+    if not match:
+        return None
+
+    city = match.group(1).strip()
+    state = (match.group(2) or "").strip()
+
+    if not city:
+        return None
+
+    conn = get_connection()
+
+    if state:
+        row = conn.execute(
+            """
+            SELECT DISTINCT city, state FROM us_institutions
+            WHERE LOWER(city) = LOWER(?) AND LOWER(state) = LOWER(?)
+            LIMIT 1
+            """,
+            (city, state)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT DISTINCT city, state FROM us_institutions
+            WHERE LOWER(city) = LOWER(?)
+            LIMIT 1
+            """,
+            (city,)
+        ).fetchone()
+
+    conn.close()
+
+    return (row["city"], row["state"]) if row else None
+
+# "How does X relate to Y" or "what is the Chevening Scholarship" has no
+# answer in a corpus of per-university records — nothing there describes
+# how two fields relate, or explains a named scholarship/exam/program
+# that isn't tied to any one institution (Chevening funds study at many
+# UK universities; it isn't a per-institution fact our dataset holds).
+# Retrieval on these just surfaces noise — e.g. "Chevening Scholarship"
+# pulled back unrelated cosmetology schools purely because they share the
+# word "scholarship". These are better answered from the model's own
+# general knowledge instead of being forced through grounding meant for
+# university-specific facts.
+GENERAL_KNOWLEDGE_PATTERN = re.compile(
+    r"relate[sd]?\s+to|relation(?:ship)?\s+(?:between|with|to)|"
+    r"difference\s+between|compare[sd]?\s+(?:to|with)|\bvs\.?\b|\bversus\b|"
+    r"similar\s+to|overlap(?:s|ping)?\s+with|what\s+is\s+the\s+difference|"
+    r"what('?s| is| are)\s+(a|an|the)\s+\w|"
+    r"what\s+does\s+.+\s+(mean|involve|cover)|"
+    r"tell\s+me\s+about\s+",
+    re.IGNORECASE
+)
+
+# Terms this app actually measures per institution. named_institution()
+# only matches a question containing a university's full official name
+# ("Harvard University"), not a common short reference ("Harvard"), so
+# "what is the admission rate at Harvard" wouldn't be recognised as
+# naming an institution. Rather than guess at a real admission rate, fee
+# or ranking from general knowledge, a question naming one of these
+# stays on the grounded retrieval path even without a confirmed match —
+# worst case it retrieves weak context and says so, which beats a
+# confident, invented figure.
+GROUNDED_DATA_TERMS = re.compile(
+    r"\b(tuition|fee|admission\s*rate|acceptance\s*rate|rank(ing)?|"
+    r"\bsat\b|\bact\b|earnings|salary|housing|room\s*and\s*board|"
+    r"net\s*price|financial\s*aid)\b",
+    re.IGNORECASE
+)
+
+
+def is_general_knowledge_question(question):
+    """
+    Whether this asks something general — how fields relate, or what a
+    named scholarship/exam/program is — rather than about a specific
+    university's fees, rankings or admissions, which must stay grounded
+    in real records.
+    """
+
+    if named_institution(question) is not None:
+        return False
+
+    if detect_superlative(question) or COUNT_PATTERN.search(question):
+        return False
+
+    if GROUNDED_DATA_TERMS.search(question):
+        return False
+
+    # "A good university in Chicago" names a real place this app has
+    # real institutions for — that's exactly the kind of descriptive
+    # question the location filter in structured_context() now answers,
+    # so it must not be short-circuited into general knowledge first.
+    if extract_location(question) is not None:
+        return False
+
+    return bool(GENERAL_KNOWLEDGE_PATTERN.search(question))
+
 
 # Students use acronyms, which embed nowhere near the spelled-out name:
 # "MIT" retrieved Karlsruhe and KAIST before this existed.
@@ -223,30 +343,66 @@ def structured_context(question, limit=8):
     if not superlative and not counting:
         name = named_institution(question)
 
-        if name is None:
+        if name is not None:
+            conn = get_connection()
+
+            row = conn.execute(
+                """
+                SELECT institution_name, city, state, tuition_out_state,
+                       net_price_avg, roomboard_on_campus,
+                       median_earnings_10yr, admission_rate
+                FROM us_institutions
+                WHERE institution_name = ?
+                """,
+                (name,)
+            ).fetchone()
+
+            conn.close()
+
+            if row is None:
+                return None
+
+            return (
+                [describe(row, "institution_name", "name match")],
+                f"looked up {name} by name"
+            )
+
+        # Not a named institution either — a purely descriptive question
+        # ("a selective university in Boston, MA") has no ranking or
+        # count to answer from SQL, but the location itself can still be
+        # matched exactly, narrowing the field to real candidates instead
+        # of leaving the whole corpus to similarity search.
+        location = extract_location(question)
+
+        if location is None:
             return None
 
+        city, state = location
         conn = get_connection()
 
-        row = conn.execute(
+        rows = conn.execute(
             """
             SELECT institution_name, city, state, tuition_out_state,
                    net_price_avg, roomboard_on_campus,
                    median_earnings_10yr, admission_rate
             FROM us_institutions
-            WHERE institution_name = ?
+            WHERE city = ? AND state = ? AND grants_degree = 1
+            ORDER BY sat_average DESC
+            LIMIT ?
             """,
-            (name,)
-        ).fetchone()
+            (city, state, limit)
+        ).fetchall()
 
         conn.close()
 
-        if row is None:
+        if not rows:
             return None
 
+        label = f"located in {city}, {state}"
+
         return (
-            [describe(row, "institution_name", "name match")],
-            f"looked up {name} by name"
+            [describe(row, "institution_name", label) for row in rows],
+            label
         )
 
     column, direction, label = superlative or (
@@ -262,6 +418,14 @@ def structured_context(question, limit=8):
     if budget is not None:
         conditions.append("tuition_out_state <= ?")
         params.append(budget)
+
+    # "Cheapest university in Boston" narrows the same way a plain
+    # location question does — the filter stacks with the ranking.
+    location = extract_location(question)
+
+    if location is not None:
+        conditions.append("city = ? AND state = ?")
+        params.extend(location)
 
     conn = get_connection()
 
@@ -308,5 +472,7 @@ def structured_context(question, limit=8):
     explanation = f"ranked by {label}"
     if budget is not None:
         explanation += f", tuition at or below ${budget:,.0f}"
+    if location is not None:
+        explanation += f", in {location[0]}, {location[1]}"
 
     return documents, explanation

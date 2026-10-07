@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saved — EduBridge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header"></header>
+
+<main class="wrap panel">
+  <h1 class="page-title">Saved universities</h1>
+  <p class="page-sub">Universities you've bookmarked while searching, in one place.</p>
+
+  <p class="hint" id="saved-note"></p>
+  <div class="results-grid" id="saved-grid"></div>
+</main>
+
+<footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
+
+<script src="js/common.js?v=3"></script>
+<script>
+(async () => {
+  if (!await initPage("saved.html")) return;
+
+  const grid = document.getElementById("saved-grid");
+  const note = document.getElementById("saved-note");
+
+  function money(value) {
+    return value == null ? null : `$${Math.round(value).toLocaleString()}/yr`;
+  }
+
+  function card(entity) {
+    const tuition = money(entity.tuition_usd) || "Tuition not reported";
+    const rank = entity.rank != null ? `Rank #${entity.rank}` : "Rank n/a";
+
+    return `
+      <div class="result-card" data-key="${encodeURIComponent(entity.key)}">
+        <a href="${escapeHtml(entity.link)}" style="text-decoration:none; color:inherit;">
+          <h3>${escapeHtml(entity.name)}</h3>
+          <p class="result-meta">${escapeHtml(entity.location || entity.country || "")}</p>
+          <div class="badge-row">
+            <span class="badge">${rank}</span>
+            <span class="badge badge-light">${tuition}</span>
+          </div>
+        </a>
+        <div class="badge-row">
+          ${compareLink(entity.key)}
+          <button type="button" class="save-link is-saved"
+            onclick="removeSaved(this)">★ Remove</button>
+        </div>
+      </div>`;
+  }
+
+  async function removeSaved(button) {
+    const cardEl = button.closest(".result-card");
+    const key = decodeURIComponent(cardEl.dataset.key);
+
+    button.disabled = true;
+
+    try {
+      await api("/api/saved/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key })
+      });
+
+      savedKeysCache?.delete(key);
+      cardEl.remove();
+
+      if (!grid.children.length) {
+        note.textContent = "Nothing saved yet — save a university from your search results to see it here.";
+      }
+    } catch (error) {
+      alert(error.message);
+      button.disabled = false;
+    }
+  }
+
+  window.removeSaved = removeSaved;
+
+  try {
+    const data = await api("/api/saved");
+
+    if (!data.saved.length) {
+      note.textContent = "Nothing saved yet — save a university from your search results to see it here.";
+    } else {
+      note.textContent = `${data.saved.length} saved ${data.saved.length === 1 ? "university" : "universities"}.`;
+      grid.innerHTML = data.saved.map(card).join("");
+    }
+  } catch (error) {
+    note.textContent = error.message;
+  }
+})();
+</script>
+</body>
+</html>

@@ -130,6 +130,41 @@ def test_garbage_session_is_rejected(temp_db):
     assert auth.read_session_token("not-a-token") is None
 
 
+# --- saved universities ------------------------------------------------
+
+def test_save_and_list(temp_db):
+    user = auth.create_user("student@example.com", "GoodPassword1")
+    auth.save_university(user["user_id"], "us:166683")
+
+    assert auth.get_saved_keys(user["user_id"]) == ["us:166683"]
+
+
+def test_saving_twice_does_not_duplicate(temp_db):
+    user = auth.create_user("student@example.com", "GoodPassword1")
+    auth.save_university(user["user_id"], "us:166683")
+    auth.save_university(user["user_id"], "us:166683")
+
+    assert auth.get_saved_keys(user["user_id"]) == ["us:166683"]
+
+
+def test_unsave_removes_it(temp_db):
+    user = auth.create_user("student@example.com", "GoodPassword1")
+    auth.save_university(user["user_id"], "us:166683")
+    auth.unsave_university(user["user_id"], "us:166683")
+
+    assert auth.get_saved_keys(user["user_id"]) == []
+
+
+def test_saved_universities_are_per_user(temp_db):
+    a = auth.create_user("a@example.com", "GoodPassword1")
+    b = auth.create_user("b@example.com", "GoodPassword1")
+
+    auth.save_university(a["user_id"], "us:166683")
+
+    assert auth.get_saved_keys(a["user_id"]) == ["us:166683"]
+    assert auth.get_saved_keys(b["user_id"]) == []
+
+
 # --- country normalisation --------------------------------------------
 
 @pytest.mark.parametrize("given,expected", [

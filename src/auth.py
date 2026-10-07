@@ -71,6 +71,24 @@ def init_auth_tables():
         """
     )
 
+    # compare_key reuses the exact "us:<unitid>" / "intl:<name>" /
+    # "india:<institute>" format recommender.py already normalises every
+    # university into via get_comparable(), so a saved row resolves
+    # through that same function instead of a second lookup path.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS saved_universities (
+            saved_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            compare_key TEXT NOT NULL,
+            saved_at TEXT NOT NULL,
+
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            UNIQUE (user_id, compare_key)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 
@@ -247,3 +265,56 @@ def get_history(user_id: int, limit: int = 50):
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+# ============================================================
+# SAVED UNIVERSITIES
+# ============================================================
+
+def save_university(user_id: int, compare_key: str):
+    conn = get_connection()
+
+    # INSERT OR IGNORE makes saving an already-saved university a no-op
+    # rather than a duplicate-row error, so the frontend never has to
+    # check first.
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO saved_universities (
+            user_id, compare_key, saved_at
+        )
+        VALUES (?, ?, ?)
+        """,
+        (user_id, compare_key, datetime.now().isoformat(timespec="seconds"))
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def unsave_university(user_id: int, compare_key: str):
+    conn = get_connection()
+
+    conn.execute(
+        "DELETE FROM saved_universities WHERE user_id = ? AND compare_key = ?",
+        (user_id, compare_key)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_saved_keys(user_id: int):
+    conn = get_connection()
+
+    rows = conn.execute(
+        """
+        SELECT compare_key FROM saved_universities
+        WHERE user_id = ?
+        ORDER BY saved_id DESC
+        """,
+        (user_id,)
+    ).fetchall()
+
+    conn.close()
+
+    return [row["compare_key"] for row in rows]

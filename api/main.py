@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 from dotenv import load_dotenv
 from fastapi import (
@@ -18,7 +20,7 @@ from src.data_loader import load_cost_data, load_university_data
 from src.llm_extractor import extract_preferences
 from src.matching import score_rows
 from src.news import fetch_news
-from src.rag import answer_question
+from src.rag import answer_question, explain_match, summarize_recommendations
 from src.recommender import (
     calculate_score,
     get_institution_detail,
@@ -83,6 +85,26 @@ class LoginRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
+
+
+class ExplainRequest(BaseModel):
+    unitid: int
+    field_of_study: str | None = None
+    fee_min: float | None = None
+    fee_max: float | None = None
+    country: str | None = None
+
+
+class SummaryRequest(BaseModel):
+    field_of_study: str | None = None
+    fee_min: float | None = None
+    fee_max: float | None = None
+    country: str | None = None
+    results: list[dict[str, Any]]
+
+
+class SaveRequest(BaseModel):
+    key: str
 
 
 # ============================================================
@@ -261,10 +283,16 @@ def get_recommendations(
             sort=request.sort
         )
 
-        rows = records(results.head(30))
+        # A broad field like "business" genuinely matches most four-year
+        # colleges, so the SQL filter alone leaves thousands of rows sorted
+        # by raw earnings. Truncating to 30 at that point buries schools
+        # strongly matched to the field under elite schools that merely
+        # also offer something adjacent. Each row carries the fields it
+        # offers so the score can measure how close its own programmes
+        # are to what was asked for, and — when a field was given — that
+        # closeness decides what makes the top 30, not earnings alone.
+        rows = records(results)
 
-        # Each row carries the fields it offers so the score can measure
-        # how close its own programmes are to what was asked for.
         for row in rows:
             row["matched_fields"] = (row.pop("all_fields", "") or "").replace(",", "|")
 
@@ -274,6 +302,17 @@ def get_recommendations(
             "fee_max": request.fee_max,
             "country": request.country
         })
+
+        if scored_fields and request.sort != "cheapest":
+            def course_match_score(row):
+                for dimension in row["match"]["dimensions"]:
+                    if dimension["label"] == "Course match":
+                        return dimension["score"]
+                return -1
+
+            rows.sort(key=course_match_score, reverse=True)
+
+        rows = rows[:30]
 
         return {
             "source": "us_institutions",
@@ -332,6 +371,34 @@ def get_recommendations(
         "matched_fields": [],
         "results": rows
     }
+
+
+@app.post("/api/recommendations/explain")
+def explain_recommendation(request: ExplainRequest):
+    try:
+        explanation = explain_match(request.unitid, request.model_dump())
+
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    if explanation is None:
+        raise HTTPException(status_code=404, detail="University not found.")
+
+    return {"explanation": explanation}
+
+
+@app.post("/api/recommendations/summary")
+def summarize(request: SummaryRequest):
+    try:
+        summary = summarize_recommendations(request.results, request.model_dump())
+
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    if summary is None:
+        raise HTTPException(status_code=400, detail="No results to summarize.")
+
+    return {"summary": summary}
 
 
 # ============================================================
@@ -517,6 +584,44 @@ def chat(request: ChatRequest, user=Depends(current_user)):
 @app.get("/api/history")
 def history(user=Depends(require_user)):
     return {"history": auth.get_history(user["user_id"])}
+
+
+# ============================================================
+# SAVED UNIVERSITIES
+# ============================================================
+
+@app.post("/api/saved")
+def save_university(request: SaveRequest, user=Depends(require_user)):
+    auth.save_university(user["user_id"], request.key)
+    return {"ok": True}
+
+
+@app.post("/api/saved/remove")
+def unsave_university(request: SaveRequest, user=Depends(require_user)):
+    auth.unsave_university(user["user_id"], request.key)
+    return {"ok": True}
+
+
+@app.get("/api/saved")
+def list_saved(user=Depends(require_user)):
+    keys = auth.get_saved_keys(user["user_id"])
+
+    # A saved key can go stale if the underlying record disappears (e.g.
+    # a dataset rebuild), so resolution failures are dropped rather than
+    # shown as broken cards.
+    saved = []
+
+    for key in keys:
+        try:
+            entity = get_comparable(key)
+        except ValueError:
+            continue
+
+        if entity is not None:
+            entity["key"] = key
+            saved.append(entity)
+
+    return {"saved": saved}
 
 
 # ============================================================

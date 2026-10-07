@@ -35,7 +35,7 @@
 
 <footer class="site-footer"><div class="wrap">EduBridge — AI-powered higher education discovery</div></footer>
 
-<script src="js/common.js"></script>
+<script src="js/common.js?v=3"></script>
 <script>
 (async () => {
   // The floating bot is redundant on the dedicated chat page.
@@ -70,7 +70,7 @@
       });
 
       document.getElementById("pending").outerHTML =
-        `<div class="msg msg-bot">${escapeHtml(result.answer)}</div>`;
+        `<div class="msg msg-bot">${renderMarkdown(result.answer)}</div>`;
 
       sources.innerHTML =
         (result.retrieval
