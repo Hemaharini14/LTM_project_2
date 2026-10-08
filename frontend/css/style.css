@@ -147,6 +147,7 @@ label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.89rem
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .result-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.accommodation-card.is-selected { border-color: var(--gold-500); box-shadow: 0 0 0 2px var(--gold-400) inset; }
 .result-card h3 { font-size: 1.02rem; margin: 0; }
 
 .result-card-disabled {

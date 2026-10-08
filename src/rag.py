@@ -6,6 +6,7 @@ from openai import OpenAI
 from src.db import get_connection
 from src.llm_extractor import FREE_MODELS, OPENROUTER_BASE_URL
 from src.query_router import is_general_knowledge_question, structured_context
+from src.scholarships import describe_scholarship, find_scholarship
 from src.vector_store import CHROMA_DIR, get_model
 
 
@@ -483,8 +484,27 @@ def answer_question(question):
     A general question — how fields of study relate, or what a named
     scholarship/exam is — has no answer in a corpus of per-university
     records, so it skips retrieval entirely rather than getting
-    "grounded" in whatever documents happened to embed nearby.
+    "grounded" in whatever documents happened to embed nearby. A named
+    external scholarship (Chevening, Fulbright, ...) is a step better
+    than that: a real curated record exists for it, so it can stay
+    grounded rather than falling back to general knowledge.
     """
+
+    scholarship = find_scholarship(question)
+
+    if scholarship is not None:
+        document = describe_scholarship(scholarship)
+
+        content = _complete_with_fallback(
+            SYSTEM_PROMPT,
+            f"Context:\n{document}\n\nQuestion: {question}"
+        )
+
+        return {
+            "answer": content,
+            "sources": [document],
+            "retrieval": "curated scholarship record"
+        }
 
     if is_general_knowledge_question(question):
         content = _complete_with_fallback(GENERAL_KNOWLEDGE_SYSTEM_PROMPT, question)

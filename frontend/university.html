@@ -124,6 +124,329 @@ function housingContextHtml(hc) {
   </div>`;
 }
 
+/**
+ * Illustrative sample accommodation + total cost calculator, shared by
+ * all three detail views. `context` carries whatever real figures
+ * exist for this source (tuition, visa fee, insurance, cost-of-living
+ * index) so the calculator starts from something real, not a guess.
+ */
+async function mountAccommodationSection(key, context) {
+  const root = document.getElementById("accommodation-section");
+  if (!root) return;
+
+  root.innerHTML = `<p class="hint">Loading accommodation options…</p>`;
+
+  let data;
+  try {
+    data = await api(`/api/accommodation?key=${encodeURIComponent(key)}`);
+  } catch (error) {
+    root.innerHTML = `<p class="hint">${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  const foodMonthly = Math.round(450 * ((context.costOfLivingIndex || 70) / 70));
+  const transportMonthly = Math.round(100 * ((context.costOfLivingIndex || 70) / 70));
+  const firstListing = data.listings[0];
+
+  // Ignav's own search provider only supports dates roughly up to ~330
+  // days out — bounding the pickers here avoids a confusing provider
+  // error for a date it was never going to support.
+  const addDays = (n) => new Date(Date.now() + n * 86400000).toISOString().split("T")[0];
+  const flightMinDate = addDays(1);
+  const flightMaxDate = addDays(330);
+  const flightDefaultDepart = addDays(90);
+  const flightDefaultReturn = addDays(97);
+
+  function listingCard(listing, index) {
+    const priceNote = data.has_real_baseline
+      ? "est., varied around this university's real reported housing cost"
+      : "est., no real housing cost reported here — generic placeholder";
+
+    if (listing.is_sample) {
+      return `
+        <div class="result-card accommodation-card" data-index="${index}">
+          <h3>${escapeHtml(listing.name)}</h3>
+          <p class="result-meta">${listing.distance_km} km from campus · ${escapeHtml(listing.room_type)}</p>
+          <div class="badge-row">
+            <span class="badge" title="${escapeHtml(priceNote)}">$${listing.monthly_price.toLocaleString()}/mo est.</span>
+            <span class="badge badge-light">★ ${listing.rating} (illustrative)</span>
+          </div>
+          <div class="badge-row" style="margin-top:6px;">
+            ${listing.facilities.map((f) => `<span class="badge badge-muted">${escapeHtml(f)}</span>`).join("")}
+          </div>
+          <div class="badge-row" style="margin-top:10px;">
+            <button type="button" class="btn btn-ghost accommodation-select" data-index="${index}">Select</button>
+            <a class="compare-link" href="${escapeHtml(listing.map_url)}" target="_blank" rel="noopener noreferrer">Search similar ↗</a>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="result-card accommodation-card" data-index="${index}">
+        <h3>${escapeHtml(listing.name)}</h3>
+        <p class="result-meta">${listing.distance_km} km from campus · ${escapeHtml(listing.place_type)}</p>
+        ${listing.address ? `<p class="result-meta">${escapeHtml(listing.address)}</p>` : ""}
+        <div class="badge-row">
+          <span class="badge" title="${escapeHtml(priceNote)}">~$${listing.monthly_price.toLocaleString()}/mo est.</span>
+        </div>
+        <div class="badge-row" style="margin-top:10px;">
+          <button type="button" class="btn btn-ghost accommodation-select" data-index="${index}">Select</button>
+          <a class="compare-link" href="${escapeHtml(listing.map_url)}" target="_blank" rel="noopener noreferrer">View on Maps ↗</a>
+        </div>
+      </div>`;
+  }
+
+  const banner = data.is_real_data
+    ? `<strong>Real nearby properties</strong> (via Geoapify) — names, addresses and distances are genuine.
+       Prices are still estimates, not confirmed rates: ${data.has_real_baseline
+         ? "varied around this university's real reported housing cost."
+         : "no real housing cost is reported for this university, so these are generic placeholders."}
+       Always confirm current pricing and availability directly.`
+    : `<strong>Sample listings for illustration only</strong> — these are not real bookable properties
+       (no real nearby listings were found via Geoapify for this location). ${data.has_real_baseline
+         ? "Prices are varied around this university's real reported housing cost."
+         : "No real housing-cost figure is reported for this university either, so these are generic placeholders."}
+       Use "Search similar" for actual places to stay.`;
+
+  root.innerHTML = `
+    <div class="card" style="background:#fff8e6; border-color:#f0dca0; margin-bottom:16px;">
+      <p class="hint" style="margin:0;">${banner}</p>
+    </div>
+    <div class="results-grid">${data.listings.map(listingCard).join("")}</div>
+
+    <h2 style="margin-top:28px;">Total cost calculator</h2>
+    <p class="hint">Every figure below is a starting point you can edit — adjust anything to match your situation.</p>
+    <div class="card form-grid">
+      <div class="field"><label for="cc-tuition">Tuition / year (USD)</label>
+        <input type="number" id="cc-tuition" value="${context.tuition ?? ""}" min="0"></div>
+      <div class="field"><label for="cc-accommodation">Accommodation / year (USD)</label>
+        <input type="number" id="cc-accommodation" value="${firstListing ? firstListing.annual_price : ""}" min="0"></div>
+      <div class="field"><label for="cc-food">Food / month (USD)</label>
+        <input type="number" id="cc-food" value="${foodMonthly}" min="0"></div>
+      <div class="field"><label for="cc-transport">Transport / month (USD)</label>
+        <input type="number" id="cc-transport" value="${transportMonthly}" min="0"></div>
+      <div class="field field-wide">
+        <label for="cc-flight-origin">Flying from (city)</label>
+        <input type="text" id="cc-flight-origin" placeholder="e.g. Mumbai, Delhi, New York" autocomplete="off">
+        <div class="form-grid" style="margin-top:8px;">
+          <div class="field"><label for="cc-flight-depart">Departure date</label>
+            <input type="date" id="cc-flight-depart" min="${flightMinDate}" max="${flightMaxDate}" value="${flightDefaultDepart}"></div>
+          <div class="field"><label for="cc-flight-return">Return date</label>
+            <input type="date" id="cc-flight-return" min="${flightMinDate}" max="${flightMaxDate}" value="${flightDefaultReturn}"></div>
+        </div>
+        <button type="button" class="btn btn-ghost" id="cc-flight-search-btn" style="margin-top:8px;">Find real flights</button>
+        <div id="cc-flight-results" style="margin-top:10px;"></div>
+        <label for="cc-flight" style="margin-top:12px; display:block;">Flight, round-trip (one-time, USD)</label>
+        <input type="number" id="cc-flight" value="0" min="0" placeholder="e.g. 900">
+        <p class="hint">Search above for a real price (via Ignav), or enter your own — flights vary too much
+          by origin, season and airline for this app to guess one on its own.</p>
+      </div>
+      <div class="field"><label for="cc-visa">Visa fee (one-time, USD)</label>
+        <input type="number" id="cc-visa" value="${context.visaFee ?? 0}" min="0"></div>
+      <div class="field"><label for="cc-insurance">Insurance / year (USD)</label>
+        <input type="number" id="cc-insurance" value="${context.insuranceFee ?? 0}" min="0"></div>
+      <div class="field"><label for="cc-other">Other expenses / year (USD)</label>
+        <input type="number" id="cc-other" value="0" min="0"></div>
+      <div class="field"><label for="cc-duration">Programme duration (years)</label>
+        <input type="number" id="cc-duration" value="1" min="1" max="8"></div>
+      <div class="field"><label for="cc-budget">Your annual budget (USD)</label>
+        <input type="number" id="cc-budget" min="0" placeholder="e.g. 40000"></div>
+      <button type="button" class="btn btn-primary field-wide" id="cc-calculate">Calculate total cost</button>
+    </div>
+    <div id="cost-calc-result" style="margin-top:16px;"></div>`;
+
+  root.querySelectorAll(".accommodation-select").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const listing = data.listings[Number(btn.dataset.index)];
+      document.getElementById("cc-accommodation").value = listing.annual_price;
+      root.querySelectorAll(".accommodation-card").forEach((c) => c.classList.remove("is-selected"));
+      btn.closest(".accommodation-card").classList.add("is-selected");
+    });
+  });
+
+  document.getElementById("cc-calculate").addEventListener("click", async () => {
+    const num = (id) => Number(document.getElementById(id).value) || 0;
+
+    const tuition = num("cc-tuition");
+    const accommodation = num("cc-accommodation");
+    const food = num("cc-food") * 12;
+    const transport = num("cc-transport") * 12;
+    const flight = num("cc-flight");
+    const visa = num("cc-visa");
+    const insurance = num("cc-insurance");
+    const other = num("cc-other");
+    const duration = Math.max(1, num("cc-duration") || 1);
+    const budget = num("cc-budget");
+
+    const annualCost = tuition + accommodation + food + transport + insurance + other;
+    const totalProgramCost = annualCost * duration + flight + visa;
+    const diff = budget - annualCost;
+
+    const resultEl = document.getElementById("cost-calc-result");
+
+    let html = `
+      <div class="card">
+        <div class="stat-grid">
+          ${stat("Annual cost", money(annualCost))}
+          ${stat("Total programme cost", money(totalProgramCost))}
+          ${stat("Your budget (annual)", budget ? money(budget) : "Not set", !budget)}
+        </div>`;
+
+    if (budget > 0) {
+      html += diff >= 0
+        ? `<p class="hint" style="margin-top:12px;"><strong>Within budget</strong> — about ${money(diff)} to spare per year.</p>`
+        : `<p class="error-text" style="margin-top:12px;"><strong>Over budget by ${money(Math.abs(diff))} per year.</strong></p>
+           <p class="hint" id="cheaper-alternatives">Looking for cheaper alternatives…</p>`;
+    }
+
+    html += `</div>`;
+    resultEl.innerHTML = html;
+
+    if (budget > 0 && diff < 0) {
+      await loadCheaperAlternatives(context, budget, key);
+    }
+  });
+
+  document.getElementById("cc-flight-search-btn").addEventListener("click", async () => {
+    const originText = document.getElementById("cc-flight-origin").value.trim();
+    const departDate = document.getElementById("cc-flight-depart").value;
+    const returnDate = document.getElementById("cc-flight-return").value;
+    const resultsEl = document.getElementById("cc-flight-results");
+
+    if (!originText || !departDate || !returnDate) {
+      resultsEl.innerHTML = `<p class="error-text">Enter a departure city and both dates.</p>`;
+      return;
+    }
+
+    resultsEl.innerHTML = `<p class="hint">Finding your origin airport…</p>`;
+
+    try {
+      const airportData = await api(`/api/flights/airports?q=${encodeURIComponent(originText)}`);
+
+      if (!airportData.airports.length) {
+        resultsEl.innerHTML = `<p class="error-text">No airport found for "${escapeHtml(originText)}".</p>`;
+        return;
+      }
+
+      const origin = airportData.airports[0];
+      resultsEl.innerHTML = `<p class="hint">Searching real fares from ${escapeHtml(origin.name)} (${origin.code})…</p>`;
+
+      const result = await api("/api/flights/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          origin_code: origin.code, key,
+          departure_date: departDate, return_date: returnDate
+        })
+      });
+
+      const dest = result.destination_airport;
+
+      resultsEl.innerHTML = `
+        <p class="hint">Real fares: ${escapeHtml(origin.name)} (${origin.code}) →
+          ${escapeHtml(dest.name)} (${dest.code}).</p>
+        <div class="results-grid">
+          ${result.itineraries.map((it) => `
+            <div class="card" style="padding:12px;">
+              <p style="margin:0; font-weight:700;">$${Math.round(it.price_amount).toLocaleString()} ${escapeHtml(it.price_currency)}</p>
+              <p class="result-meta" style="margin:4px 0;">
+                ${escapeHtml(it.outbound_carrier || "")}${it.inbound_carrier && it.inbound_carrier !== it.outbound_carrier ? " / " + escapeHtml(it.inbound_carrier) : ""}
+                · ${it.stops_outbound} stop${it.stops_outbound === 1 ? "" : "s"}
+              </p>
+              <div class="badge-row">
+                <button type="button" class="btn btn-ghost flight-select" data-price="${it.price_amount}">Use this price</button>
+                <button type="button" class="compare-link flight-book" data-ignav-id="${escapeHtml(it.ignav_id)}">Booking options ↗</button>
+              </div>
+              <div class="flight-booking-links hint" style="margin-top:6px;"></div>
+            </div>`).join("")}
+        </div>`;
+
+      resultsEl.querySelectorAll(".flight-select").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.getElementById("cc-flight").value = Math.round(Number(btn.dataset.price));
+        });
+      });
+
+      resultsEl.querySelectorAll(".flight-book").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const linksEl = btn.closest(".card").querySelector(".flight-booking-links");
+          linksEl.textContent = "Loading booking options…";
+
+          try {
+            const linkData = await api(`/api/flights/booking-links?ignav_id=${encodeURIComponent(btn.dataset.ignavId)}`);
+
+            linksEl.innerHTML = linkData.links.length
+              ? linkData.links.map((l) =>
+                  `<a href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(l.provider_name)} ↗</a>`
+                ).join(" · ")
+              : "No booking links available for this fare.";
+          } catch (error) {
+            linksEl.textContent = error.message;
+          }
+        });
+      });
+    } catch (error) {
+      resultsEl.innerHTML = `<p class="error-text">${escapeHtml(error.message)}</p>`;
+    }
+  });
+}
+
+async function loadCheaperAlternatives(context, budget, excludeKey) {
+  const el = document.getElementById("cheaper-alternatives");
+  if (!el) return;
+
+  try {
+    let alternatives = [];
+
+    if (context.source === "us") {
+      const data = await api("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ country: "United States", fee_max: budget })
+      });
+      alternatives = data.results.slice(0, 3).map((r) => ({
+        name: r.institution_name, tuition: r.tuition_out_state,
+        link: `university.html?unitid=${r.unitid}`
+      }));
+    } else if (context.source === "india") {
+      const data = await api("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ country: "India" })
+      });
+      alternatives = data.results
+        .filter((r) => r.fee_band_usd_min != null && r.fee_band_usd_min <= budget)
+        .slice(0, 3)
+        .map((r) => ({
+          name: r.institute, tuition: r.fee_band_usd_min,
+          link: `university.html?india=${encodeURIComponent(r.institute)}`
+        }));
+    } else if (context.source === "intl") {
+      const excludeName = excludeKey.split(":").slice(1).join(":");
+      const data = await api(
+        `/api/accommodation/cheaper-international?country=${encodeURIComponent(context.country)}&budget=${budget}&exclude=${encodeURIComponent(excludeName)}`
+      );
+      alternatives = data.alternatives.map((a) => ({
+        name: a.university_name, tuition: a.tuition_min,
+        link: `university.html?intl=${encodeURIComponent(a.university_name)}`
+      }));
+    }
+
+    el.outerHTML = alternatives.length
+      ? `<div style="margin-top:10px;">
+          <p class="hint"><strong>Cheaper alternatives within your budget:</strong></p>
+          <div class="badge-row">
+            ${alternatives.map((a) =>
+              `<a class="btn btn-ghost" href="${escapeHtml(a.link)}">${escapeHtml(a.name)} — ${money(a.tuition)}/yr</a>`
+            ).join("")}
+          </div>
+        </div>`
+      : `<p class="hint" style="margin-top:10px;">No cheaper alternative found in this dataset for your budget.</p>`;
+  } catch (error) {
+    el.textContent = error.message;
+  }
+}
+
 /** Detail view for an Indian institute: entrance-exam closing ranks in
  *  place of an admission rate, and a policy fee band rather than a
  *  per-institute price. */
@@ -142,6 +465,7 @@ async function renderIndia(name, status) {
         ? `Rs ${uni.fee_band_inr_min.toLocaleString("en-IN")}`
         : `Rs ${uni.fee_band_inr_min.toLocaleString("en-IN")} - ${uni.fee_band_inr_max.toLocaleString("en-IN")}`)
     : null;
+  const savedKeys = await getSavedKeys();
 
   document.getElementById("content").innerHTML = `
     <h1 class="page-title">${escapeHtml(uni.institute)}</h1>
@@ -151,6 +475,7 @@ async function renderIndia(name, status) {
       ${uni.ranking ? `<span class="badge">World rank #${uni.ranking.university_rank}</span>` : ""}
       <span class="badge badge-light">${uni.programs.length} branches</span>
       <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('india:' + uni.institute)}">Compare this institute</a>
+      ${saveButton("india:" + uni.institute, savedKeys)}
     </div>
 
     <h2>Tuition</h2>
@@ -213,7 +538,16 @@ async function renderIndia(name, status) {
     </ol>
 
     <p class="hint" style="margin-top:22px;">Cutoffs come from JoSAA's published ${uni.cutoff_year}
-      seat-allocation data. Fees follow published national policy, not a per-institute price list.</p>`;
+      seat-allocation data. Fees follow published national policy, not a per-institute price list.</p>
+
+    <h2 style="margin-top:28px;">Accommodation &amp; total cost</h2>
+    <div id="accommodation-section"></div>`;
+
+  mountAccommodationSection(`india:${uni.institute}`, {
+    source: "india",
+    tuition: uni.fee_band_usd_min || 0,
+    country: "India"
+  });
 }
 
 /** Government-run scholarship programmes for international students. */
@@ -255,6 +589,7 @@ async function renderInternational(name, status) {
   const yearOne = [uni.tuition_min, uni.rent_usd_annual, uni.visa_fee_usd, uni.insurance_usd]
     .filter((v) => v != null)
     .reduce((a, b) => a + b, 0);
+  const savedKeys = await getSavedKeys();
 
   document.getElementById("content").innerHTML = `
     <h1 class="page-title">${escapeHtml(uni.university_name)}</h1>
@@ -265,6 +600,7 @@ async function renderInternational(name, status) {
           : `<span class="badge badge-light">Not in world rankings</span>`}
       <span class="badge badge-light">${uni.programs.length} programmes listed</span>
       <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('intl:' + uni.university_name)}">Compare this university</a>
+      ${saveButton("intl:" + uni.university_name, savedKeys)}
     </div>
 
     <h2>Tuition</h2>
@@ -332,7 +668,19 @@ async function renderInternational(name, status) {
 
     <p class="hint" style="margin-top:22px;">Tuition and living costs for non-US universities come from a
       community-maintained international education cost dataset, so treat them as indicative and confirm
-      on the university's own site. US figures come from the US Department of Education.</p>`;
+      on the university's own site. US figures come from the US Department of Education.</p>
+
+    <h2 style="margin-top:28px;">Accommodation &amp; total cost</h2>
+    <div id="accommodation-section"></div>`;
+
+  mountAccommodationSection(`intl:${uni.university_name}`, {
+    source: "intl",
+    tuition: uni.tuition_min || 0,
+    country: uni.country,
+    costOfLivingIndex: uni.country_cost_of_living_index,
+    visaFee: uni.visa_fee_usd || 0,
+    insuranceFee: uni.insurance_usd || 0
+  });
 }
 
 (async () => {
@@ -373,6 +721,7 @@ async function renderInternational(name, status) {
 
   const fieldNames = [...new Set((uni.fields_of_study || []).map((f) => f.cip_description.replace(/\.$/, "")))];
   const credentials = [...new Set((uni.fields_of_study || []).map((f) => f.credential_description))];
+  const savedKeys = await getSavedKeys();
 
   document.getElementById("content").innerHTML = `
     <h1 class="page-title">${escapeHtml(uni.institution_name)}</h1>
@@ -383,6 +732,7 @@ async function renderInternational(name, status) {
       ${r ? `<span class="badge">World rank #${r.university_rank}</span>` : `<span class="badge badge-light">Not in world rankings</span>`}
       ${uni.institution_url ? `<a class="badge badge-light" href="https://${escapeHtml(uni.institution_url.replace(/^https?:\/\//, ""))}" target="_blank" rel="noopener noreferrer">Official site ↗</a>` : ""}
       <a class="badge badge-light" href="compare.html?a=${encodeURIComponent('us:' + uni.unitid)}">Compare this university</a>
+      ${saveButton("us:" + uni.unitid, savedKeys)}
     </div>
 
     <h2>Fees structure</h2>
@@ -474,7 +824,16 @@ async function renderInternational(name, status) {
     <p class="hint">${fieldNames.length} programmes · ${escapeHtml(credentials.join(", "))}</p>
     <div class="badge-row" style="margin-top:10px;">
       ${fieldNames.slice(0, 40).map((f) => `<span class="badge badge-light">${escapeHtml(f)}</span>`).join("")}
-    </div>`;
+    </div>
+
+    <h2 style="margin-top:28px;">Accommodation &amp; total cost</h2>
+    <div id="accommodation-section"></div>`;
+
+  mountAccommodationSection(`us:${uni.unitid}`, {
+    source: "us",
+    tuition: uni.tuition_out_state || 0,
+    country: "United States"
+  });
 })();
 </script>
 </body>

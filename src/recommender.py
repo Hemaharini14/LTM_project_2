@@ -639,6 +639,38 @@ ADMISSION_SYSTEMS = {
 }
 
 
+def cheaper_international(country, budget, exclude_name=None, limit=3):
+    """
+    Other universities in the same country with a lower minimum tuition
+    than `budget`, for suggesting a real alternative when a student's
+    cost estimate comes in over budget. The old pandas-based global
+    recommendation path has no fee filter at all, so this is a direct,
+    narrower query rather than a reuse of it.
+    """
+
+    conn = get_connection()
+
+    rows = conn.execute(
+        """
+        SELECT university_name, country, city,
+               MIN(tuition_usd) AS tuition_min
+        FROM international_programs
+        WHERE country = ?
+          AND tuition_usd IS NOT NULL
+          AND tuition_usd <= ?
+          AND university_name != ?
+        GROUP BY university_name, country, city
+        ORDER BY tuition_min ASC
+        LIMIT ?
+        """,
+        (country, budget, exclude_name or "", limit)
+    ).fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
 def search_international(term, limit=20):
     """Name search across non-US universities."""
 
@@ -725,6 +757,8 @@ def get_international_detail(university_name):
         "university_name": first["university_name"],
         "country": country,
         "city": first["city"],
+        "latitude": first["latitude"],
+        "longitude": first["longitude"],
         "tuition_min": min(tuitions) if tuitions else None,
         "tuition_max": max(tuitions) if tuitions else None,
         "living_cost_index": first["living_cost_index"],

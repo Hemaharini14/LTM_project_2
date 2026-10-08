@@ -125,7 +125,7 @@ const labelToKey = new Map();
 
     try {
       const data = await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
-      renderComparison(data.a, data.b);
+      await renderComparison(data.a, data.b);
       document.getElementById("compare-result").hidden = false;
     } catch (error) {
       errorEl.textContent = error.message;
@@ -147,14 +147,15 @@ const labelToKey = new Map();
     return `<tr${cls}><th>${escapeHtml(label)}</th><td>${left}</td><td>${right}</td></tr>`;
   }
 
-  function renderComparison(a, b) {
+  async function renderComparison(a, b) {
     const m = (u, field, estField) => cell(u[field] == null ? null : money(u[field]), estField && u[estField]);
+    const savedKeys = await getSavedKeys();
 
     document.getElementById("compare-table").innerHTML = `
       <tr>
         <th></th>
-        <th><a href="${escapeHtml(a.link)}">${escapeHtml(a.name)}</a></th>
-        <th><a href="${escapeHtml(b.link)}">${escapeHtml(b.name)}</a></th>
+        <th><a href="${escapeHtml(a.link)}">${escapeHtml(a.name)}</a><br>${saveButton(a.key, savedKeys)}</th>
+        <th><a href="${escapeHtml(b.link)}">${escapeHtml(b.name)}</a><br>${saveButton(b.key, savedKeys)}</th>
       </tr>
       ${row("Location", escapeHtml(a.location), escapeHtml(b.location))}
       ${row("Type", escapeHtml(a.kind || "—"), escapeHtml(b.kind || "—"))}

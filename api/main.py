@@ -21,8 +21,17 @@ from src.llm_extractor import extract_preferences
 from src.matching import score_rows
 from src.news import fetch_news
 from src.rag import answer_question, explain_match, summarize_recommendations
+from src.accommodation import geocode, geocode_city, get_accommodation_listings
+from src.flights import (
+    FlightSearchError,
+    get_booking_links,
+    resolve_destination_airport_candidates,
+    search_airports,
+    search_round_trip,
+)
 from src.recommender import (
     calculate_score,
+    cheaper_international,
     get_institution_detail,
     get_comparable,
     get_india_detail,
@@ -30,6 +39,7 @@ from src.recommender import (
     get_international_detail,
     get_international_university_names,
     get_us_filter_options,
+    parse_compare_key,
     prepare_recommendations,
     recommend_india_institutes,
     recommend_us_institutions,
@@ -38,7 +48,7 @@ from src.recommender import (
     search_institutions,
     search_international
 )
-from src.resume_parser import extract_text_from_pdf
+from src.resume_parser import ResumeParseError, extract_text_from_pdf
 from src.reviews import get_reviews
 
 load_dotenv()
@@ -105,6 +115,14 @@ class SummaryRequest(BaseModel):
 
 class SaveRequest(BaseModel):
     key: str
+
+
+class FlightSearchRequest(BaseModel):
+    origin_code: str
+    key: str
+    departure_date: str
+    return_date: str
+    adults: int = 1
 
 
 # ============================================================
@@ -230,7 +248,10 @@ def get_filters():
 async def upload_resume(file: UploadFile = File(...)):
     file_bytes = await file.read()
 
-    text = extract_text_from_pdf(file_bytes)
+    try:
+        text = extract_text_from_pdf(file_bytes)
+    except ResumeParseError as error:
+        raise HTTPException(status_code=422, detail=str(error))
 
     if not text:
         raise HTTPException(
@@ -482,6 +503,188 @@ def university_detail(unitid: int, user=Depends(current_user)):
         )
 
     return detail
+
+
+@app.get("/api/accommodation")
+def accommodation(key: str):
+    """
+    Illustrative sample accommodation listings for one university, plus
+    whatever real housing-cost figure exists to anchor them to. Takes
+    the same "us:<unitid>" / "intl:<name>" / "india:<institute>" key
+    used everywhere else a university is identified across sources.
+    """
+
+    try:
+        kind, value = parse_compare_key(key)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+    base_monthly_rent = None
+    city = None
+    lat = lon = None
+
+    if kind == "us":
+        detail = get_institution_detail(int(value))
+
+        if detail is None:
+            raise HTTPException(status_code=404, detail="University not found.")
+
+        base_monthly_rent = detail["housing_context"].get("monthly")
+
+        if base_monthly_rent is None:
+            estimate = detail["estimates"].get("roomboard_off_campus")
+            base_monthly_rent = round(estimate["value"] / 12) if estimate else None
+
+        city = detail["city"]
+        lat, lon = detail.get("latitude"), detail.get("longitude")
+
+    elif kind == "intl":
+        detail = get_international_detail(value)
+
+        if detail is None:
+            raise HTTPException(status_code=404, detail="University not found.")
+
+        base_monthly_rent = detail["rent_usd_monthly"]
+        city = detail["city"]
+        lat, lon = detail.get("latitude"), detail.get("longitude")
+
+    elif kind == "india":
+        detail = get_india_detail(value)
+
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Institute not found.")
+
+        # No accommodation cost data, and no stored coordinates either,
+        # exist for India in this dataset — geocode the institute name
+        # itself to still get a real search point for real listings.
+        resolved = geocode(f"{value}, India")
+
+        if resolved is not None:
+            lat, lon = resolved
+
+    listings, has_real_baseline, is_real_data = get_accommodation_listings(
+        key, lat=lat, lon=lon, base_monthly_rent=base_monthly_rent, city=city
+    )
+
+    return {
+        "listings": listings,
+        "is_real_data": is_real_data,
+        "has_real_baseline": has_real_baseline,
+        "real_monthly_baseline": base_monthly_rent
+    }
+
+
+@app.get("/api/accommodation/cheaper-international")
+def cheaper_international_endpoint(country: str, budget: float, exclude: str | None = None):
+    return {"alternatives": cheaper_international(country, budget, exclude_name=exclude)}
+
+
+def _destination_context(kind: str, value: str):
+    """The real city, country and coordinates to resolve a university's
+    airport from. Coordinates feed the Geoapify-based fallback in
+    resolve_destination_airport_candidates() for towns with no airport of their
+    own; the country disambiguates a city name that collides across
+    countries (Cambridge, MA vs Cambridge, UK — a real example this
+    app hit)."""
+
+    if kind == "us":
+        detail = get_institution_detail(int(value))
+
+        if not detail:
+            return None
+
+        return {
+            "city": detail["city"], "country": "United States",
+            "lat": detail.get("latitude"), "lon": detail.get("longitude"),
+        }
+
+    if kind == "intl":
+        detail = get_international_detail(value)
+
+        if not detail:
+            return None
+
+        return {
+            "city": detail["city"], "country": detail["country"],
+            "lat": detail.get("latitude"), "lon": detail.get("longitude"),
+        }
+
+    if kind == "india":
+        # No stored city or coordinates for India — geocode the
+        # institute name itself for both.
+        resolved = geocode(f"{value}, India")
+        city = geocode_city(f"{value}, India")
+
+        return {
+            "city": city, "country": "India",
+            "lat": resolved[0] if resolved else None,
+            "lon": resolved[1] if resolved else None,
+        }
+
+    return None
+
+
+@app.get("/api/flights/airports")
+def flight_airports(q: str):
+    try:
+        return {"airports": search_airports(q)}
+    except FlightSearchError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+
+
+@app.post("/api/flights/search")
+def flight_search(request: FlightSearchRequest):
+    try:
+        kind, value = parse_compare_key(request.key)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+    context = _destination_context(kind, value)
+
+    if not context or not context["city"]:
+        raise HTTPException(
+            status_code=404,
+            detail="Couldn't determine a destination city for this university."
+        )
+
+    candidates = resolve_destination_airport_candidates(
+        context["city"], context["country"], context["lat"], context["lon"]
+    )
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No airport found near {context['city']}."
+        )
+
+    # The nearest airport to a smaller university town sometimes has
+    # no real international fares at all (Oxford's own small airport
+    # has none — students actually fly via London), so each candidate
+    # is tried in order rather than trusting the first one blindly.
+    last_error = None
+
+    for airport in candidates:
+        try:
+            itineraries = search_round_trip(
+                request.origin_code, airport["code"],
+                request.departure_date, request.return_date,
+                adults=request.adults
+            )
+        except FlightSearchError as error:
+            last_error = error
+            continue
+
+        return {"destination_airport": airport, "itineraries": itineraries}
+
+    raise HTTPException(status_code=502, detail=str(last_error))
+
+
+@app.get("/api/flights/booking-links")
+def flight_booking_links(ignav_id: str):
+    try:
+        return {"links": get_booking_links(ignav_id)}
+    except FlightSearchError as error:
+        raise HTTPException(status_code=502, detail=str(error))
 
 
 @app.get("/api/compare")
